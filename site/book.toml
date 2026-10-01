@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier
+# SPDX-License-Identifier: BSD-2-Clause
+[book]
+title = "nvme-check"
+authors = ["Jesper Wendel Devantier"]
+language = "en"
+
+[output.html]
+site-url = "https://jwdevantier.github.io/nvme-check/"
+git-repository-url = "https://github.com/jwdevantier/nvme-check"

@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier
+# SPDX-License-Identifier: BSD-2-Clause
+name: Publish site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: '0.5.2'
+
+      - name: Build site
+        working-directory: ./site
+        run: mdbook build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site/book
+          force_orphan: true

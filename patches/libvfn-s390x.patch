@@ -1,0 +1,699 @@
+diff --git a/include/vfn/nvme/queue.h b/include/vfn/nvme/queue.h
+index 401b0ed..e403564 100644
+--- a/include/vfn/nvme/queue.h
++++ b/include/vfn/nvme/queue.h
+@@ -115,13 +115,13 @@ static inline int nvme_try_dbbuf(uint16_t v, struct nvme_dbbuf *dbbuf)
+ 	/* force submission queue write */
+ 	wmb();
+ 
+-	old = __LOAD_PTR(uint32_t *, dbbuf->doorbell);
+-	__STORE_PTR(uint32_t *, dbbuf->doorbell, v);
++	old = le32_to_cpu(__LOAD_PTR(leint32_t *, dbbuf->doorbell));
++	__STORE_PTR(leint32_t *, dbbuf->doorbell, cpu_to_le32(v));
+ 
+ 	/* do not reorder the eventidx load with the doorbell store */
+ 	mb();
+ 
+-	eventidx = __LOAD_PTR(uint32_t *, dbbuf->eventidx);
++	eventidx = le32_to_cpu(__LOAD_PTR(leint32_t *, dbbuf->eventidx));
+ 
+ 	if (!__nvme_need_mmio((uint16_t)eventidx, v, (uint16_t)old)) {
+ 		trace_guard(NVME_SKIP_MMIO) {
+diff --git a/include/vfn/support/arch/s390x/meson.build b/include/vfn/support/arch/s390x/meson.build
+new file mode 100644
+index 0000000..573ccd1
+--- /dev/null
++++ b/include/vfn/support/arch/s390x/meson.build
+@@ -0,0 +1,7 @@
++vfn_support_s390x_headers = files(
++  'tod.h',
++)
++
++install_headers(vfn_support_s390x_headers, subdir: 'vfn/support/arch/s390x')
++
++docs_deps += vfn_support_s390x_headers
+diff --git a/include/vfn/support/arch/s390x/tod.h b/include/vfn/support/arch/s390x/tod.h
+new file mode 100644
+index 0000000..1c1d243
+--- /dev/null
++++ b/include/vfn/support/arch/s390x/tod.h
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: LGPL-2.1-or-later OR MIT */
++
++#ifndef LIBVFN_SUPPORT_ARCH_S390X_TOD_H
++#define LIBVFN_SUPPORT_ARCH_S390X_TOD_H
++
++#include <stdint.h>
++#include <time.h>
++
++/*
++ * On s390x, use CLOCK_MONOTONIC_RAW in nanoseconds as the timestamp source
++ * rather than reading the TOD clock via inline assembly. Ticks are only used
++ * for timing/timeout purposes, so a portable implementation is preferable to
++ * architecture-specific assembly here.
++ */
++static inline uint64_t get_ticks_arch(void)
++{
++	struct timespec ts;
++
++	if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts))
++		return 0;
++
++	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
++}
++
++#endif /* LIBVFN_SUPPORT_ARCH_S390X_TOD_H */
+diff --git a/include/vfn/support/barrier.h b/include/vfn/support/barrier.h
+index c8052dd..50e16e3 100644
+--- a/include/vfn/support/barrier.h
++++ b/include/vfn/support/barrier.h
+@@ -37,6 +37,15 @@
+ # define wmb()		asm volatile("sfence" ::: "memory")
+ # define mb()		asm volatile("mfence" ::: "memory")
+ # define dma_rmb()	barrier()
++#elif defined(__s390x__)
++static inline void bcr_serialize(void)
++{
++	asm volatile("bcr 15,0" ::: "memory");
++}
++# define rmb()		barrier()
++# define wmb()		barrier()
++# define mb()		bcr_serialize()
++# define dma_rmb()	bcr_serialize()
+ #else
+ # error unsupported architecture
+ #endif
+diff --git a/include/vfn/support/meson.build b/include/vfn/support/meson.build
+index 5a7195d..146e620 100644
+--- a/include/vfn/support/meson.build
++++ b/include/vfn/support/meson.build
+@@ -23,4 +23,6 @@ if host_machine.cpu_family() == 'x86_64'
+   subdir('arch/x86_64')
+ elif host_machine.cpu_family() == 'aarch64'
+   subdir('arch/arm64')
++elif host_machine.cpu_family() == 's390x'
++  subdir('arch/s390x')
+ endif
+diff --git a/include/vfn/support/mmio.h b/include/vfn/support/mmio.h
+index d8bca19..8eabf68 100644
+--- a/include/vfn/support/mmio.h
++++ b/include/vfn/support/mmio.h
+@@ -13,14 +13,88 @@
+ #ifndef LIBVFN_SUPPORT_MMIO_H
+ #define LIBVFN_SUPPORT_MMIO_H
+ 
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++/*
++ * On some platforms (notably s390x/zPCI) VFIO BARs cannot be mmap()ed and
++ * are reachable only via pread()/pwrite() on the device fd; the accessors
++ * below route such accesses through vfn_mmio_synth_* instead of dereferencing.
++ */
++enum vfn_mmio_synth_result {
++	/* @addr is not synthetic; access it as ordinary memory-mapped I/O */
++	VFN_MMIO_NOT_SYNTH = 0,
++
++	/* @addr is synthetic; the access was serviced via fd I/O */
++	VFN_MMIO_SYNTH_DONE,
++
++	/* @addr is synthetic but the access failed and was logged */
++	VFN_MMIO_SYNTH_ERROR,
++};
++
++extern enum vfn_mmio_synth_result vfn_mmio_synth_read(void *addr, void *buf,
++							 size_t len);
++extern enum vfn_mmio_synth_result vfn_mmio_synth_write(void *addr,
++							  const void *buf, size_t len);
++
++/*
++ * vfn_mmio_synth_is - is @addr a synthetic BAR address?
++ *
++ * Return: true if @addr falls inside a live synthetic region.
++ */
++extern bool vfn_mmio_synth_is(const void *addr);
++
++/*
++ * vfn_mmio_synth_map - map a non-mmap()able region as emulated MMIO
++ * @owner: opaque owner, to drain the region when the owner is torn down
++ * @fd: device fd to service accesses with
++ * @file_off: region offset in @fd
++ * @size: region size
++ *
++ * Hand out a synthetic address, in a reserved PROT_NONE window, that the
++ * accessors above route through @fd. @owner is not interpreted here.
++ *
++ * Return: the synthetic address, or NULL with errno set.
++ */
++extern void *vfn_mmio_synth_map(void *owner, int fd, uint64_t file_off,
++				size_t size);
++
++/*
++ * vfn_mmio_synth_unmap - release the synthetic mapping at @addr
++ *
++ * Return: true if @addr is (or was) inside the synthetic arena, in which case
++ * it must NOT be munmap()ed (the arena is pre-reserved); false if @addr is an
++ * ordinary mapping. The region is released only if @owner owns it.
++ */
++extern bool vfn_mmio_synth_unmap(void *owner, void *addr);
++
++/*
++ * vfn_mmio_synth_drain - release every synthetic mapping owned by @owner
++ */
++extern void vfn_mmio_synth_drain(void *owner);
++
+ /**
+  * mmio_read32 - read 4 bytes in memory-mapped register
+  * @addr: memory-mapped register
+  *
+- * Return: read value (native endian)
++ * Return: read value (little endian)
+  */
+ static inline leint32_t mmio_read32(void *addr)
+ {
++	leint32_t v;
++
++	switch (vfn_mmio_synth_read(addr, &v, sizeof(v))) {
++	case VFN_MMIO_SYNTH_DONE:
++		return v;
++	case VFN_MMIO_SYNTH_ERROR:
++		/* @addr is a PROT_NONE window: all-ones, never dereference */
++		return cpu_to_le32(0xffffffffu);
++	case VFN_MMIO_NOT_SYNTH:
++	default:
++		break;
++	}
++
+ 	/* memory-mapped register */
+ 	return *(const volatile leint32_t __force *)addr;
+ }
+@@ -31,18 +105,21 @@ static inline leint32_t mmio_read32(void *addr)
+  *
+  * Read the low 4 bytes first, then the high 4 bytes.
+  *
+- * Return: read value (native endian)
++ * Return: read value (little endian)
+  */
+ static inline leint64_t mmio_lh_read64(void *addr)
+ {
+-	uint32_t lo, hi;
++	uint32_t a, b;
+ 
+-	/* memory-mapped register */
+-	lo = *(const volatile uint32_t __force *)addr;
+-	/* memory-mapped register */
+-	hi = *(const volatile uint32_t __force *)((char *)addr + 4);
++	/* read the low-addressed word first (devices may latch the high one) */
++	a = (uint32_t __force)mmio_read32(addr);
++	b = (uint32_t __force)mmio_read32((char *)addr + 4);
+ 
+-	return (leint64_t __force)(((uint64_t)hi << 32) | lo);
++#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
++	return (leint64_t __force)(((uint64_t)b << 32) | a);
++#else
++	return (leint64_t __force)(((uint64_t)a << 32) | b);
++#endif
+ }
+ 
+ #define mmio_read64(addr) mmio_lh_read64(addr)
+@@ -54,6 +131,9 @@ static inline leint64_t mmio_lh_read64(void *addr)
+  */
+ static inline void mmio_write32(void *addr, leint32_t v)
+ {
++	if (vfn_mmio_synth_write(addr, &v, sizeof(v)) != VFN_MMIO_NOT_SYNTH)
++		return;
++
+ 	/* memory-mapped register */
+ 	*(volatile leint32_t __force *)addr = v;
+ }
+@@ -61,29 +141,33 @@ static inline void mmio_write32(void *addr, leint32_t v)
+ /**
+  * mmio_lh_write64 - write 8 bytes to memory-mapped register
+  * @addr: memory-mapped register
+- * @v: value to write (native endian)
++ * @v: value to write (little endian)
+  *
+  * Write 8 bytes to memory-mapped register as two 4 byte writes (low bytes
+  * first, then high).
+  */
+ static inline void mmio_lh_write64(void *addr, leint64_t v)
+ {
+-	mmio_write32(addr, (leint32_t __force)v);
+-	mmio_write32((char *)addr + 4, (leint32_t __force)((uint64_t __force)v >> 32));
++	uint64_t x = le64_to_cpu(v);
++
++	mmio_write32(addr, cpu_to_le32((uint32_t)x));
++	mmio_write32((char *)addr + 4, cpu_to_le32((uint32_t)(x >> 32)));
+ }
+ 
+ /**
+  * mmio_hl_write64 - write 8 bytes to memory-mapped register
+  * @addr: memory-mapped register
+- * @v: value to write (native endian)
++ * @v: value to write (little endian)
+  *
+  * Write 8 bytes to memory-mapped register as two 4 byte writes (high bytes
+  * first, then low).
+  */
+ static inline void mmio_hl_write64(void *addr, leint64_t v)
+ {
+-	mmio_write32((char *)addr + 4, (leint32_t __force)((uint64_t __force)v >> 32));
+-	mmio_write32(addr, (leint32_t __force)v);
++	uint64_t x = le64_to_cpu(v);
++
++	mmio_write32((char *)addr + 4, cpu_to_le32((uint32_t)(x >> 32)));
++	mmio_write32(addr, cpu_to_le32((uint32_t)x));
+ }
+ 
+ #endif /* LIBVFN_SUPPORT_MMIO_H */
+diff --git a/include/vfn/support/ticks.h b/include/vfn/support/ticks.h
+index 547be22..6602395 100644
+--- a/include/vfn/support/ticks.h
++++ b/include/vfn/support/ticks.h
+@@ -21,6 +21,8 @@
+ # include <vfn/support/arch/x86_64/rdtsc.h>
+ #elif defined(__aarch64__)
+ # include <vfn/support/arch/arm64/cnt.h>
++#elif defined(__s390x__)
++# include <vfn/support/arch/s390x/tod.h>
+ #else
+ # error unsupported architecture
+ #endif
+diff --git a/src/nvme/core.c b/src/nvme/core.c
+index d097d94..3b01ef5 100644
+--- a/src/nvme/core.c
++++ b/src/nvme/core.c
+@@ -864,6 +864,20 @@ int nvme_configure_cmb(struct nvme_ctrl *ctrl)
+ 		return -1;
+ 	}
+ 
++	/*
++	 * The CMB needs real, page-backed memory (queue entries are copied
++	 * with ordinary stores and the pages are pinned below); a synthetic
++	 * BAR only fronts pread()/pwrite() and cannot support it.
++	 */
++	if (vfn_mmio_synth_is(ctrl->cmb.vaddr)) {
++		log_debug("cmb unsupported: bar %d region is not memory-mappable\n", bar);
++		vfio_pci_unmap_bar(&ctrl->pci, bar, ctrl->cmb.vaddr, ctrl->cmb.size,
++				   NVME_FIELD_GET(cmbloc, CMBLOC_OFST));
++		ctrl->cmb.vaddr = NULL;
++		errno = ENOTSUP;
++		return -1;
++	}
++
+ 	if (iommu_map_vaddr(__iommu_ctx(ctrl), ctrl->cmb.vaddr,
+ 				ctrl->cmb.size, &ctrl->cmb.iova, 0x0)) {
+ 		log_debug("could not map bar vaddr to iommu\n");
+diff --git a/src/support/arch/s390x/meson.build b/src/support/arch/s390x/meson.build
+new file mode 100644
+index 0000000..4fb6e00
+--- /dev/null
++++ b/src/support/arch/s390x/meson.build
+@@ -0,0 +1,5 @@
++support_sources_s390x = files(
++  'tod.c',
++)
++
++support_sources += support_sources_s390x
+diff --git a/src/support/arch/s390x/tod.c b/src/support/arch/s390x/tod.c
+new file mode 100644
+index 0000000..7b11530
+--- /dev/null
++++ b/src/support/arch/s390x/tod.c
+@@ -0,0 +1,11 @@
++// SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
++
++#include <stdint.h>
++
++#include "vfn/support/ticks.h"
++
++/* get_ticks_arch() returns monotonic nanoseconds on s390x. */
++uint64_t get_ticks_freq_arch(void)
++{
++	return 1000000000ull;
++}
+diff --git a/src/support/meson.build b/src/support/meson.build
+index c2c2bb5..1db64a3 100644
+--- a/src/support/meson.build
++++ b/src/support/meson.build
+@@ -2,12 +2,15 @@ support_sources = files(
+   'io.c',
+   'log.c',
+   'mem.c',
++  'mmio.c',
+   'ticks.c',
+   'timer.c',
+ )
+ 
+ if host_machine.cpu_family() == 'x86_64'
+   subdir('arch/x86_64')
++elif host_machine.cpu_family() == 's390x'
++  subdir('arch/s390x')
+ endif
+ 
+ vfn_sources += support_sources
+diff --git a/src/support/mmio.c b/src/support/mmio.c
+new file mode 100644
+index 0000000..dc599c9
+--- /dev/null
++++ b/src/support/mmio.c
+@@ -0,0 +1,265 @@
++// SPDX-License-Identifier: LGPL-2.1-or-later or MIT
++
++/*
++ * This file is part of libvfn.
++ *
++ * Copyright (C) 2022 The libvfn Authors. All Rights Reserved.
++ *
++ * This library (libvfn) is dual licensed under the GNU Lesser General
++ * Public License version 2.1 or later or the MIT license. See the
++ * COPYING and LICENSE files for more information.
++ */
++
++#define log_fmt(fmt) "support/mmio: " fmt
++
++#include <errno.h>
++#include <string.h>
++
++#include "vfn/support.h"
++
++/*
++ * Emulated MMIO for regions that cannot be mmap()ed. On some platforms
++ * (notably s390x/zPCI) a VFIO BAR region is not mmap()able and is reachable
++ * only through pread()/pwrite() on the device fd. vfn_mmio_synth_map() hands
++ * out synthetic addresses inside a reserved PROT_NONE window; the mmio.h
++ * accessors route accesses to such addresses through the fd.
++ *
++ * The registry is shared by all users and keyed by an opaque @owner (the
++ * device), so a device's mappings can be drained when it is torn down. The
++ * slot records the fd and file offset needed to service an access.
++ */
++#define VFN_MMIO_SYNTH_SLOTS	16
++#define VFN_MMIO_SYNTH_STRIDE	(4UL * 1024 * 1024)
++
++struct vfn_mmio_synth_region {
++	bool used;
++	void *owner;
++	int fd;
++	uint64_t file_off;
++	size_t size;
++	uintptr_t vbase;
++};
++
++static struct vfn_mmio_synth_region vfn_mmio_synth[VFN_MMIO_SYNTH_SLOTS];
++static uintptr_t vfn_mmio_synth_base;
++static size_t vfn_mmio_synth_span;
++
++/*
++ * Serializes slot allocation and release. The decode path
++ * (vfn_mmio_synth_read/write/is, called from the mmio.h accessors) stays
++ * lock-free: a slot is immutable once ->used is published with release
++ * semantics, and a cleared slot decodes to "not synthetic" -- a racy access
++ * after unmap then faults on the PROT_NONE window rather than operating on
++ * a reused slot.
++ */
++static pthread_mutex_t vfn_mmio_synth_lock;
++
++/*
++ * Initialized at load: a static pthread initializer upsets sparse (see
++ * iommu/vfio.c).
++ */
++static void __attribute__((constructor)) init_vfn_mmio_synth_lock(void)
++{
++	pthread_mutex_init(&vfn_mmio_synth_lock, NULL);
++}
++
++/* in-arena, regardless of slot liveness */
++static bool vfn_mmio_synth_arena_contains(const void *addr)
++{
++	uintptr_t a = (uintptr_t)addr;
++
++	return vfn_mmio_synth_span && a >= vfn_mmio_synth_base &&
++	       a - vfn_mmio_synth_base < vfn_mmio_synth_span;
++}
++
++static struct vfn_mmio_synth_region *vfn_mmio_synth_lookup(const void *addr)
++{
++	uintptr_t a = (uintptr_t)addr;
++	struct vfn_mmio_synth_region *r;
++
++	if (!vfn_mmio_synth_span || a < vfn_mmio_synth_base ||
++	    a - vfn_mmio_synth_base >= vfn_mmio_synth_span)
++		return NULL;
++
++	r = &vfn_mmio_synth[(a - vfn_mmio_synth_base) / VFN_MMIO_SYNTH_STRIDE];
++	if (!__atomic_load_n(&r->used, __ATOMIC_ACQUIRE))
++		return NULL;
++
++	return r;
++}
++
++void *vfn_mmio_synth_map(void *owner, int fd, uint64_t file_off, size_t size)
++{
++	struct vfn_mmio_synth_region *r;
++	void *ret = NULL;
++
++	if (size > VFN_MMIO_SYNTH_STRIDE) {
++		errno = E2BIG;
++		return NULL;
++	}
++
++	pthread_mutex_lock(&vfn_mmio_synth_lock);
++
++	if (!vfn_mmio_synth_span) {
++		size_t span = VFN_MMIO_SYNTH_SLOTS * VFN_MMIO_SYNTH_STRIDE;
++		void *win;
++
++		win = mmap(NULL, span, PROT_NONE,
++			   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
++		if (win == MAP_FAILED)
++			goto out;
++
++		vfn_mmio_synth_base = (uintptr_t)win;
++		vfn_mmio_synth_span = span;
++	}
++
++	for (size_t s = 0; s < VFN_MMIO_SYNTH_SLOTS; s++) {
++		r = &vfn_mmio_synth[s];
++
++		if (__atomic_load_n(&r->used, __ATOMIC_ACQUIRE))
++			continue;
++
++		r->owner = owner;
++		r->fd = fd;
++		r->file_off = file_off;
++		r->size = size;
++		r->vbase = vfn_mmio_synth_base +
++			   (uintptr_t)s * VFN_MMIO_SYNTH_STRIDE;
++
++		/* publish last: accessors only trust ->used */
++		__atomic_store_n(&r->used, true, __ATOMIC_RELEASE);
++
++		ret = (void *)r->vbase;
++		break;
++	}
++
++	if (!ret)
++		errno = ENOSPC;
++out:
++	pthread_mutex_unlock(&vfn_mmio_synth_lock);
++	return ret;
++}
++
++bool vfn_mmio_synth_unmap(void *owner, void *addr)
++{
++	struct vfn_mmio_synth_region *r;
++
++	if (!vfn_mmio_synth_arena_contains(addr))
++		return false;
++
++	pthread_mutex_lock(&vfn_mmio_synth_lock);
++
++	for (size_t s = 0; s < VFN_MMIO_SYNTH_SLOTS; s++) {
++		r = &vfn_mmio_synth[s];
++
++		if (!__atomic_load_n(&r->used, __ATOMIC_ACQUIRE) ||
++		    (void *)r->vbase != addr)
++			continue;
++
++		if (r->owner != owner) {
++			log_debug("synthetic bar %p not owned by this device (stale or double unmap?)\n",
++				  addr);
++		} else {
++			r->owner = NULL;
++			__atomic_store_n(&r->used, false, __ATOMIC_RELEASE);
++		}
++
++		pthread_mutex_unlock(&vfn_mmio_synth_lock);
++		return true;
++	}
++
++	pthread_mutex_unlock(&vfn_mmio_synth_lock);
++
++	log_debug("unmapping stale synthetic bar %p\n", addr);
++	return true;
++}
++
++void vfn_mmio_synth_drain(void *owner)
++{
++	struct vfn_mmio_synth_region *r;
++
++	pthread_mutex_lock(&vfn_mmio_synth_lock);
++
++	for (size_t s = 0; s < VFN_MMIO_SYNTH_SLOTS; s++) {
++		r = &vfn_mmio_synth[s];
++
++		if (!__atomic_load_n(&r->used, __ATOMIC_ACQUIRE) ||
++		    r->owner != owner)
++			continue;
++
++		log_debug("releasing leaked synthetic bar mapping %p\n",
++			  (void *)r->vbase);
++		r->owner = NULL;
++		__atomic_store_n(&r->used, false, __ATOMIC_RELEASE);
++	}
++
++	pthread_mutex_unlock(&vfn_mmio_synth_lock);
++}
++
++bool vfn_mmio_synth_is(const void *addr)
++{
++	return !!vfn_mmio_synth_lookup(addr);
++}
++
++enum vfn_mmio_synth_result vfn_mmio_synth_read(void *addr, void *buf, size_t len)
++{
++	struct vfn_mmio_synth_region *r = vfn_mmio_synth_lookup(addr);
++	size_t off;
++	ssize_t n;
++
++	if (!r)
++		return VFN_MMIO_NOT_SYNTH;
++
++	/*
++	 * The window is larger than the region, so the address decode is not
++	 * enough: bound against the mapped size. This must not report "not
++	 * synthetic" or the caller would dereference the PROT_NONE window.
++	 */
++	off = (uintptr_t)addr - r->vbase;
++	if (off > r->size || len > r->size - off) {
++		log_debug("synthetic bar read out of bounds (off %#zx len %zu, size %#zx)\n",
++			  off, len, r->size);
++		return VFN_MMIO_SYNTH_ERROR;
++	}
++
++	do {
++		n = pread(r->fd, buf, len, r->file_off + off);
++	} while (n < 0 && errno == EINTR);
++
++	if (n != (ssize_t)len) {
++		log_debug("failed to read synthetic bar region (off %#zx len %zu): %s\n",
++			  off, len, n < 0 ? strerror(errno) : "short read");
++		return VFN_MMIO_SYNTH_ERROR;
++	}
++
++	return VFN_MMIO_SYNTH_DONE;
++}
++
++enum vfn_mmio_synth_result vfn_mmio_synth_write(void *addr, const void *buf, size_t len)
++{
++	struct vfn_mmio_synth_region *r = vfn_mmio_synth_lookup(addr);
++	size_t off;
++	ssize_t n;
++
++	if (!r)
++		return VFN_MMIO_NOT_SYNTH;
++
++	off = (uintptr_t)addr - r->vbase;
++	if (off > r->size || len > r->size - off) {
++		log_debug("synthetic bar write out of bounds (off %#zx len %zu, size %#zx)\n",
++			  off, len, r->size);
++		return VFN_MMIO_SYNTH_ERROR;
++	}
++
++	do {
++		n = pwrite(r->fd, buf, len, r->file_off + off);
++	} while (n < 0 && errno == EINTR);
++
++	if (n != (ssize_t)len) {
++		log_debug("failed to write synthetic bar region (off %#zx len %zu): %s\n",
++			  off, len, n < 0 ? strerror(errno) : "short write");
++		return VFN_MMIO_SYNTH_ERROR;
++	}
++
++	return VFN_MMIO_SYNTH_DONE;
++}
+diff --git a/src/vfio/pci.c b/src/vfio/pci.c
+index fde2407..ab4f3c8 100644
+--- a/src/vfio/pci.c
++++ b/src/vfio/pci.c
+@@ -47,16 +47,18 @@
+ 
+ static int pci_set_bus_master(struct vfio_pci_device *pci)
+ {
++	leint16_t le_cmd;
+ 	uint16_t pci_cmd;
+ 
+-	if (vfio_pci_read_config(pci, &pci_cmd, sizeof(pci_cmd), PCI_COMMAND) < 0) {
++	if (vfio_pci_read_config(pci, &le_cmd, sizeof(le_cmd), PCI_COMMAND) < 0) {
+ 		log_debug("failed to read pci config region\n");
+ 		return -1;
+ 	}
+ 
+-	pci_cmd |= PCI_COMMAND_MASTER;
++	pci_cmd = le16_to_cpu(le_cmd) | PCI_COMMAND_MASTER;
++	le_cmd = cpu_to_le16(pci_cmd);
+ 
+-	if (vfio_pci_write_config(pci, &pci_cmd, sizeof(pci_cmd), PCI_COMMAND) < 0) {
++	if (vfio_pci_write_config(pci, &le_cmd, sizeof(le_cmd), PCI_COMMAND) < 0) {
+ 		log_debug("failed to write pci config region\n");
+ 		return -1;
+ 	}
+@@ -132,12 +134,23 @@ void *vfio_pci_map_bar(struct vfio_pci_device *pci, int idx, size_t len, uint64_
+ 	len = min_t(size_t, len, pci->bar_region_info[idx].size - offset);
+ 	offset = pci->bar_region_info[idx].offset + offset;
+ 
+-	mem = mmap(NULL, len, prot, MAP_SHARED, pci->dev.fd, offset);
+-	if (mem == MAP_FAILED) {
+-		log_debug("failed to map bar region\n");
+-		mem = NULL;
++	if (!(pci->bar_region_info[idx].flags & VFIO_REGION_INFO_FLAG_MMAP)) {
++		/*
++		 * FLAG_MMAP is unset (s390x/zPCI compiles out CONFIG_VFIO_PCI_MMAP),
++		 * so fall back to pread()/pwrite(). Key off the flag, not an
++		 * mmap() failure, so a real mmap() error on a mappable region
++		 * still fails loudly instead of silently switching mechanism.
++		 */
++		mem = vfn_mmio_synth_map(pci, pci->dev.fd, offset, len);
++	} else {
++		mem = mmap(NULL, len, prot, MAP_SHARED, pci->dev.fd, offset);
++		if (mem == MAP_FAILED)
++			mem = NULL;
+ 	}
+ 
++	if (!mem)
++		log_debug("failed to map bar region\n");
++
+ 	return mem;
+ }
+ 
+@@ -146,6 +159,9 @@ void vfio_pci_unmap_bar(struct vfio_pci_device *pci, int idx, void *mem, size_t
+ {
+ 	assert(idx < PCI_STD_NUM_BARS);
+ 
++	if (vfn_mmio_synth_unmap(pci, mem))
++		return;
++
+ 	len = min_t(size_t, len, pci->bar_region_info[idx].size - offset);
+ 
+ 	if (munmap(mem, len))
+@@ -223,6 +239,8 @@ int vfio_pci_close(struct vfio_pci_device *pci)
+ {
+ 	struct iommu_ctx *ctx = pci->dev.ctx;
+ 
++	vfn_mmio_synth_drain(pci);
++
+ 	log_fatal_if(close(pci->dev.fd), "close");
+ 
+ 	if (ctx->ops.put_device_fd)

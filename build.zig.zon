@@ -1,0 +1,26 @@
+.{
+    .name = .nvme_check,
+    .version = "0.1.0",
+    .fingerprint = 0x3a09d1eebbdfd7c0,
+    .minimum_zig_version = "0.16.0",
+
+    // libvfn with patches/libvfn-s390x.patch applied — carried as the fork
+    // jwdevantier/libvfn, pinned by full commit SHA + content hash. To bump:
+    // sync the fork, update .url, `zig fetch <url>` to rehash.
+    .dependencies = .{
+        .libvfn = .{
+            .url = "https://github.com/jwdevantier/libvfn/archive/1c577283c5dd69216b59aba89d7037b3fc13a649.tar.gz",
+            .hash = "N-V-__8AAMmJDwArCbks73rac0ib6cKhrm1FfLhCqFD4FMy3",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tests",
+        "testlib",
+        "vendor",
+        "patches",
+    },
+}

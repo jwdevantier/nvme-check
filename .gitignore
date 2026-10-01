@@ -1,0 +1,12 @@
+.zig-cache/
+zig-out/
+zig-pkg/
+.makac/
+logs/
+config.user.lua
+site/book/
+.luarc.json
+
+# nix build outputs
+result
+result-*
