@@ -3,16 +3,6 @@
 
 # Developer notes
 
-## Test layers
-
-Three layers, fastest first:
-
-| Layer | What | Command | Cost |
-|---|---|---|---|
-| Tag-expression DSL | `testlib/lib/tagexpr.lua` unit tests | `makac run testlib/tests/tagexpr_test.lua` | milliseconds |
-| Unit tests | `test {}` in `tests/<suite>/spec.zig` and `src/` | `zig build test` | seconds |
-| Guest suites | `tests/<suite>/batches/*.zig` in fresh VMs | `./nvme-check.lua` | minutes |
-
 ## Unit tests
 This library has some unit tests, some testing aspects of the [LibVFN](https://github.com/SamsungDS/libvfn)
 binding, others testing utility code shared across actual device tests.
@@ -24,46 +14,15 @@ zig build test --summary all
 To add additional sets of tests, add your file(s) to `const test_roots` in
 `build.zig`
 
-## What a run looks like
+A special case: the runner's `-w/--where` flag (see the [User guide](user-guide.md))
+takes a boolean tag expression for test selection — `aer or feature`,
+`(aer or feature) and not slow` — and that little expression language is
+implemented as a standalone Lua module, `testlib/lib/tagexpr.lua`. Being Lua,
+`zig build test` cannot see it, so it has its own unit suite, which doubles
+as the reference for the full grammar:
 
-A run selects (architecture, batch) pairs and executes each pair in one VM
-session. For each batch, per architecture:
-
-1. The architecture's live disk is resumed from its base snapshot.
-2. An NVMe controller is hot-plugged with the batch's device parameters, backed
-   by a fresh raw disk under `.makac/vm-images/`.
-3. The controller is bound to `vfio-pci` in the guest.
-4. The batch's test binary, cross-compiled statically for the guest
-   architecture, is copied in and executed, reading the controller BDF from
-   `NVME_BDF`.
-5. The VM is shut down with a clean QMP quit.
-
-The slow base-image build happens once per architecture; every batch after
-that starts from the same resumed snapshot and a fresh copy of its raw disk.
-
-```
- HOST                                GUEST  (resumed at the baseline snapshot)
-
- QMP: loadvm                ----->   VM is live in seconds, no boot
-
- QMP: device_add            ----->   NVMe controller appears on the PCI bus,
- (batch's ctrl params +              backed by a fresh raw disk
-  fresh raw disk)
-
- ssh: bind script           ----->   controller leaves nvme.ko, opens via
-                                     /dev/vfio; its BDF becomes NVME_BDF
-
- zig build (static, guest arch)      (nothing on the guest yet)
-
- scp batch binary           ----->   /tmp/<batch>
-
- ssh: NVME_BDF run          ----->   zig test runner drives the controller
-                                     through libvfn: queues, doorbells,
-                                     CQEs, no kernel NVMe driver in between
-                            <-----   stdout, stderr, exit code
-
- QMP: quit                  ----->   clean shutdown; live-disk writes and the
-                                     raw NVMe disk are discarded
+```sh
+makac run testlib/tests/tagexpr_test.lua
 ```
 
 ## Building against a local libvfn

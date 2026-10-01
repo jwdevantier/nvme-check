@@ -35,7 +35,7 @@ tail -f .makac/qemu/img/<image>/serial.log
 ```
 
 For what happens once a run starts, see
-[Developer notes](developer-notes.md#what-a-run-looks-like).
+[Architecture](architecture.md#what-a-run-looks-like).
 
 ## Selecting tests
 

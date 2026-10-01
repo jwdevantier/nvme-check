@@ -5,12 +5,16 @@
 
 ## Vocabulary
 
-- **Suite** — a directory under `tests/`, for example `tests/tp4176/`. The
-  organising unit: one suite's spec model, its test programs, and its workflow.
-  In this repository each suite happens to test one NVMe Technical Proposal
-  (TP), which is where the `tp4176` naming comes from.
+- **Suite** — a directory under `tests/` **containing a `workflow.lua`**, for
+  example `tests/tp4176/`. The organising unit: one suite's spec model, its
+  test programs, and its workflow. In this repository each suite happens to
+  test one NVMe Technical Proposal (TP), which is where the `tp4176` naming
+  comes from. The runner discovers suites by that file: a `tests/<dir>/`
+  without a `workflow.lua` is skipped, silently.
 - **Batch** — one Zig test binary plus the NVMe device parameters it runs
-  against, executed in one fresh VM session.
+  against, executed in one fresh VM session. A batch exists only as an entry
+  in the suite workflow's `batches` table — nothing scans the `batches/`
+  directory, so a program file that no entry names is dead code.
 - **Program** — a Zig test root (one file under `tests/<suite>/batches/`) that
   compiles into one test binary.
 
@@ -63,8 +67,9 @@ Add an entry to the `batches` table in `tests/<suite>/workflow.lua`:
 ./nvme-check.lua tp4176 -w example
 ```
 
-There is no separate build registration step per batch: the workflow is the
-source of truth, and `build.zig` compiles what the suite's batches need.
+There is no separate build registration step per batch — `build.zig` needs
+no edit — but the workflow entry *is* the registration: until a row in
+`batches` names the program, nothing builds or runs it.
 
 ## Starting a new suite
 
