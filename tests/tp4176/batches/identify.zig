@@ -4,7 +4,7 @@ const std = @import("std");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
 const common = @import("common");
-const spec = @import("spec");
+const spec = @import("common").spec;
 
 // Identify I/O Command Set Specific (CNS 06h, CSI 00h): the controller must
 // advertise NVM Command Set spec 1.3 (VER, byte 21) and rate limiting

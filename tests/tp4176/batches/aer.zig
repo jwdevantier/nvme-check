@@ -7,7 +7,7 @@ const vfn = @import("vfn");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
 const common = @import("common");
-const spec = @import("spec");
+const spec = @import("common").spec;
 
 const aer_wait_ms: i64 = 10_000; // s390x/TCG can be slow to deliver the event
 

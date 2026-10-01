@@ -7,10 +7,10 @@ eventually feeds them.
 ## builds
 
 ```sh
-# host unit tests (spec.zig test {} blocks; no VM)
+# unit tests (spec.zig test {} blocks; no VM)
 zig build test
 
-# host tests against a LOCAL libvfn checkout (default: pinned zon dep)
+# unit tests against a LOCAL libvfn checkout (default: pinned zon dep)
 zig build test -Dlibvfn-src=~/repos/libvfn
 
 # guest batch binary by hand (what the harness runs under the hood)

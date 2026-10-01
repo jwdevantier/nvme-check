@@ -5,7 +5,7 @@ const c = @import("vfn_c");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
 const common = @import("common");
-const spec = @import("spec");
+const spec = @import("common").spec;
 
 // Get Log Page 28h: header sanity and descriptor cross-references. Port list
 // entries are *dword* offsets into the log page (Figure NewFig); the

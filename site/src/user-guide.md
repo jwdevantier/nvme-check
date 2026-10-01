@@ -2,9 +2,17 @@
 <!-- SPDX-License-Identifier: BSD-2-Clause -->
 
 # User guide
+`./nvme-check.lua` is the entry point. It discovers the suites (any directory
+under `tests/` containing a `workflow.lua`), applies your selection, and runs
+the selected batches.
 
-`./nvme-check.lua` is the entry point. It discovers every suite under
-`tests/`, applies your selection, and runs it.
+A workflow is a makac script with the makac.qemu actions at its disposal, so a
+suite can in principle drive several VMs and do arbitrary work around the test
+run. In practice a suite usually needs one thing: boot a VM with the NVMe
+device configured a particular way, run a test binary against it, shut the VM
+down. For that common case the workflow simply declares a `batches` table —
+one row per test program, with its device parameters and tags, as in
+[tests/tp4176/workflow.lua](https://github.com/jwdevantier/nvme-check/blob/main/tests/tp4176/workflow.lua).
 
 Before the first run, set the QEMU binaries in the
 [Configuration](configuration.md); there are no defaults, and the suites refuse
@@ -45,7 +53,7 @@ Selection has two axes: the suites named on the command line, and the
 ### Suites
 
 The positional arguments name suites. `./nvme-check.lua tp4176` runs only that
-suite; with no positional arguments, every suite under `tests/` is selected.
+suite; with no positional arguments, every discovered suite is selected.
 An unknown name fails with the list of available suites.
 
 ### Tags

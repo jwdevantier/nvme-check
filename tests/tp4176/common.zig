@@ -1,12 +1,14 @@
 //! Shared device state for a TP4176 batch: one lazily-opened controller per
 //! test binary. The Zig test runner is single-threaded, so no lock is needed
-//! (the Odin suite needed one because its runner was multi-threaded).
 
 const std = @import("std");
 const vfn = @import("vfn");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
-const spec = @import("spec");
+
+/// The suite's wire model; batches reach it as @import("common").spec (an
+/// ordinary file import — the build no longer wires spec.zig as a module).
+pub const spec = @import("spec.zig");
 
 // libvfn's nvme_init() expects a zeroed controller (it does not clear it
 // itself); an `undefined` global would poison it.

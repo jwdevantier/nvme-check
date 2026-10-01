@@ -7,7 +7,7 @@ const vfn = @import("vfn");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
 const common = @import("common");
-const spec = @import("spec");
+const spec = @import("common").spec;
 
 // Set Features 28h followed by Get Features 28h must round-trip every field
 // at its Figure RLDB offset (notably WBWR, byte 35).

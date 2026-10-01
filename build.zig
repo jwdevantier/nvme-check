@@ -226,9 +226,11 @@ pub fn build(b: *std.Build) void {
 
     // Optional: build one Zig test root as a guest test binary. Invoked by the
     // `nvmecheck:build` makac action (DESIGN.md §8); the output lands in
-    // <prefix>/bin/<program-name>. The TP's spec.zig / common.zig (if present)
-    // are exposed as the named imports "spec" and "common" next to the batch
-    // program, so adding a TP needs no build.zig change here.
+    // <prefix>/bin/<program-name>. The suite's common.zig, if present, is
+    // exposed as the named import "common" next to the batch program; anything
+    // else a suite needs (its wire model, helpers) is reached through common's
+    // re-exports as ordinary file imports, so adding a suite needs no
+    // build.zig change here.
     if (program) |prog| {
         const pname = program_name orelse std.fs.path.stem(prog);
         // tests/<tp>/batches/<name>.zig -> tests/<tp>
@@ -246,27 +248,21 @@ pub fn build(b: *std.Build) void {
         prog_mod.addImport("nvme", nvme_zig);
         prog_mod.addImport("vfntest", vfntest_zig);
 
-        const spec_mod = b.createModule(.{
-            .root_source_file = b.path(b.pathJoin(&.{ tp_dir, "spec.zig" })),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        });
-        spec_mod.addImport("vfn_c", vfn_c);
-        prog_mod.addImport("spec", spec_mod);
-
-        const common_mod = b.createModule(.{
-            .root_source_file = b.path(b.pathJoin(&.{ tp_dir, "common.zig" })),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        });
-        common_mod.addImport("vfn_c", vfn_c);
-        common_mod.addImport("vfn", vfn_zig);
-        common_mod.addImport("nvme", nvme_zig);
-        common_mod.addImport("vfntest", vfntest_zig);
-        common_mod.addImport("spec", spec_mod);
-        prog_mod.addImport("common", common_mod);
+        const common_rel = b.pathJoin(&.{ tp_dir, "common.zig" });
+        const has_common = if (b.build_root.handle.access(b.graph.io, common_rel, .{})) |_| true else |_| false;
+        if (has_common) {
+            const common_mod = b.createModule(.{
+                .root_source_file = b.path(common_rel),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            });
+            common_mod.addImport("vfn_c", vfn_c);
+            common_mod.addImport("vfn", vfn_zig);
+            common_mod.addImport("nvme", nvme_zig);
+            common_mod.addImport("vfntest", vfntest_zig);
+            prog_mod.addImport("common", common_mod);
+        }
 
         const prog_test = b.addTest(.{ .name = pname, .root_module = prog_mod });
         if (static) prog_test.linkage = .static;
