@@ -16,6 +16,7 @@ There are two supported ways to get these: Nix, which pins every version and
 is the setup the project is developed on, and a traditional Linux install,
 which is best-effort. Both then need the `makac.qemu` package.
 
+
 ## With Nix
 
 The default dev shell provides Zig, a QEMU build (for `qemu-img`), `genisoimage` and `makac`:
@@ -23,6 +24,8 @@ The default dev shell provides Zig, a QEMU build (for `qemu-img`), `genisoimage`
 ```sh
 nix develop
 ```
+
+Finally, proceed to [fetch the makac packages](#fetch-the-packages).
 
 ## Traditional Setup
 
@@ -39,11 +42,13 @@ Install each dependency with your package manager:
 - **`genisoimage`** — from the `cdrkit` package.
 - **The OpenSSH client** — for `ssh` and `scp`.
 
+Finally, proceed to [fetch the makac packages](#fetch-the-packages).
+
 ## Fetch the packages
 
 `makac_project.lua` at the repository root is the project's dependency
 manifest - run `makac fetch` to install the package(s) this project
-depends on ([makac.qemu](https://github.com/jwdevantier/makac.qemu)).
+depends on ([makac.qemu](https://jwdevantier.github.io/makac.qemu/)).
 
 ```
 # install required (makac) packages

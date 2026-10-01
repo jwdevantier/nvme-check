@@ -320,10 +320,10 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run.addArgs(args);
     b.step("run", "Run the smoke test").dependOn(&run.step);
 
-    // Host unit tests for pure spec code (no device, no makac): one test
-    // binary per root, run with `zig build test`. Pure spec roots depend only
-    // on the translate-c binding; add roots as TPs land.
-    const test_step = b.step("test", "Run host unit tests (pure spec)");
+    // Unit tests for shared code (no device, no makac): one test binary per
+    // root, run with `zig build test`. Pure spec roots depend only on the
+    // translate-c binding; add roots as TPs land.
+    const test_step = b.step("test", "Run unit tests");
     const test_roots = [_][]const u8{
         "src/tests.zig",
         "src/nvme/nvme.zig",

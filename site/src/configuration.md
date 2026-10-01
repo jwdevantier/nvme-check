@@ -35,19 +35,15 @@ needs the binaries, not a QEMU source tree:
 |---|---|---|
 | amd64 system | `qemu-system-x86_64` for amd64 guests | `qemu.amd64.bin` |
 | s390x system | `qemu-system-s390x` for s390x guests | `qemu.s390x.bin` |
-| image tool | `qemu-img`, independent of architecture | `qemu.img` |
 
-There are no built-in defaults. Until `qemu.<arch>.bin` and `qemu.img` are set,
-`makac doctor` reports them as errors and the suites refuse to run with a
-message naming the missing key. The config key is derived from the architecture
-name (`qemu.<arch>.bin`), so a new architecture gains its own knob
+There are no built-in defaults. Until `qemu.<arch>.bin` is set, `makac doctor`
+reports it as an error and the suites refuse to run with a message naming the
+missing key. The config key is derived from the architecture name
+(`qemu.<arch>.bin`), so a new architecture gains its own knob
 automatically.
 
-The QEMU build is the device under test, so a suite is only meaningful against
-a build that implements the feature. Note also that base-image builds invoke
-`qemu-img` and `genisoimage` by name, looking them up on `PATH`, in addition to
-the configured `qemu.img`. Keep a single QEMU build first on `PATH` if you want
-one consistent QEMU everywhere.
+**NOTE:** `qemu-img` itself must be on `PATH`, otherwise steps which create
+the images for the VMs will fail.
 
 ## SSH key
 
@@ -66,11 +62,13 @@ that `ssh` finds by default, or available through `ssh-agent`.
 
 ## The build toolchain
 
-`build.nix` chooses how batch binaries are compiled: `true` always builds via
-`nix develop` (flake-pinned Zig), `false` uses the ambient `zig` on `PATH`, and
-unset auto-detects. `build.libvfn_src` overrides the libvfn source tree. Both
-are covered in
-[Developer notes](developer-notes.md#building-against-a-local-libvfn).
+`build.nix` in `config.user.lua` determines how binaries are compiled. 
+If `true`, test binaries are built using the nix development shell defined in
+`flake.nix`. If `false`, test binaries are built using the `zig` binary on `PATH`.
+
+`build.libvfn_src` in `config.user.lua` allows you to compile against a local copy
+of libvfn, see [Developer notes](developer-notes.md#building-against-a-local-libvfn)
+for details
 
 ## Environment variables
 

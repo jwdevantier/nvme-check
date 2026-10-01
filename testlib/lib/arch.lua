@@ -18,7 +18,6 @@ local config = require("./config")
 ---@class Arch
 ---@field name ArchName
 ---@field qemu_bin string
----@field qemu_img string
 ---@field ssh_port integer
 ---@field vm_name string
 ---@field hostname string
@@ -62,24 +61,21 @@ end
 -- Per-arch constants. Ports are distinct from the e2e live_/s390_ sets
 -- (2090 / 2290 / 2291).
 --
--- The QEMU binaries have no built-in default: they are the per-machine
--- `qemu.<arch>.bin` / `qemu.img` from the config file (config.user.sample.lua).
--- M.get refuses an arch whose binaries are unset, so a suite cannot run on a
--- machine that was never configured for it; `makac doctor nvmecheck` reports
--- the same. A new arch automatically gains its config knob as qemu.<arch>.bin.
+-- The QEMU system binaries have no built-in default: they are the per-machine
+-- `qemu.<arch>.bin` from the config file (config.user.sample.lua). M.get
+-- refuses an arch whose binary is unset, so a suite cannot run on a machine
+-- that was never configured for it; `makac doctor nvmecheck` reports the
+-- same. A new arch automatically gains its config knob as qemu.<arch>.bin.
+-- qemu-img has no config knob: it is invoked by name, resolved on PATH, same
+-- as the qemu:img image builder does (and genisoimage besides).
 local function qemu_bin(arch_name)
 	return config.qemu_bin(arch_name)
-end
-
-local function qemu_img()
-	return config.qemu_img()
 end
 
 local DEF = {
 	amd64 = {
 		name = "amd64",
 		qemu_bin = qemu_bin("amd64"),
-		qemu_img = qemu_img(),
 		ssh_port = 2301,
 		vm_name = "nvme-amd64",
 		hostname = "nvme-amd64",
@@ -110,7 +106,6 @@ local DEF = {
 	s390x = {
 		name = "s390x",
 		qemu_bin = qemu_bin("s390x"),
-		qemu_img = qemu_img(),
 		ssh_port = 2302,
 		vm_name = "nvme-s390x",
 		hostname = "nvme-s390x",
@@ -149,9 +144,6 @@ function M.get(name)
 	if not a.qemu_bin then
 		error(("qemu.%s.bin is not set; set it in config.user.lua (see config.user.sample.lua)")
 			:format(name), 0)
-	end
-	if not a.qemu_img then
-		error("qemu.img is not set; set it in config.user.lua (see config.user.sample.lua)", 0)
 	end
 	return a
 end
@@ -242,7 +234,8 @@ end
 ---@return boolean
 local function has_baseline(a, live_disk_abs)
 	if makac.fs.stat(live_disk_abs) == nil then return false end
-	local r = makac.exec({ a.qemu_img, "snapshot", "-l", live_disk_abs })
+	-- qemu-img by name, resolved on PATH (same as the qemu:img builder)
+	local r = makac.exec({ "qemu-img", "snapshot", "-l", live_disk_abs })
 	return r.code == 0 and (r.stdout or ""):find(a.snap_tag, 1, true) ~= nil
 end
 

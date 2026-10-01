@@ -39,7 +39,7 @@ return function(health, pkg_name)
 			:format(config.source(), config.path()), "fix the path or unset it")
 	else
 		health.error("no config.user.lua — the QEMU binaries are not configured",
-			"copy config.user.sample.lua to config.user.lua and set qemu.<arch>.bin and qemu.img")
+			"copy config.user.sample.lua to config.user.lua and set qemu.<arch>.bin")
 	end
 
 	-- archlib evaluates the QEMU paths at load; a malformed config raises there
@@ -64,15 +64,14 @@ return function(health, pkg_name)
 					("fix %s in config.user.lua"):format(key))
 			end
 		end
-		local img = cfg(config.qemu_img)
-		if type(img) ~= "string" then
-			health.error("qemu.img is not set",
-				"set it in config.user.lua (copy config.user.sample.lua)")
-		elseif makac.fs.stat(img) then
-			health.ok("qemu-img: " .. img)
+		-- qemu-img is invoked by name (by the qemu:img builder and the
+		-- snapshot probe alike); what matters is what PATH resolves.
+		local img = on_path("qemu-img")
+		if img then
+			health.ok("qemu-img (from PATH): " .. img)
 		else
-			health.error("qemu-img not found: " .. img,
-				"fix qemu.img in config.user.lua")
+			health.error("qemu-img not found on PATH",
+				"put the QEMU build to test on PATH (qemu:img invokes qemu-img by name)")
 		end
 	end
 

@@ -13,9 +13,6 @@ to run without them.
 ## Running tests
 
 ```sh
-# host-only unit tests: pure spec code, no VM
-zig build test
-
 # everything: every suite, every architecture
 ./nvme-check.lua
 

@@ -13,8 +13,8 @@ return {
 	qemu = {
 		-- Required: there are no built-in defaults. Point these at the QEMU
 		-- build you want to test. `makac doctor nvmecheck` checks that they
-		-- exist.
-		img = "/opt/qemu/bin/qemu-img",
+		-- exist. qemu-img is NOT configured here: it (and genisoimage) is
+		-- invoked by name, resolved on PATH.
 		amd64 = { bin = "/opt/qemu/bin/qemu-system-x86_64" },
 		s390x = { bin = "/opt/qemu/bin/qemu-system-s390x" },
 	},

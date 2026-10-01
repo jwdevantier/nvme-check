@@ -10,8 +10,19 @@ Three layers, fastest first:
 | Layer | What | Command | Cost |
 |---|---|---|---|
 | Tag-expression DSL | `testlib/lib/tagexpr.lua` unit tests | `makac run testlib/tests/tagexpr_test.lua` | milliseconds |
-| Host spec tests | `test {}` in `tests/<suite>/spec.zig` and `src/` | `zig build test` | seconds |
+| Unit tests | `test {}` in `tests/<suite>/spec.zig` and `src/` | `zig build test` | seconds |
 | Guest suites | `tests/<suite>/batches/*.zig` in fresh VMs | `./nvme-check.lua` | minutes |
+
+## Unit tests
+This library has some unit tests, some testing aspects of the [LibVFN](https://github.com/SamsungDS/libvfn)
+binding, others testing utility code shared across actual device tests.
+To run the tests:
+```sh
+zig build test --summary all
+```
+
+To add additional sets of tests, add your file(s) to `const test_roots` in
+`build.zig`
 
 ## What a run looks like
 
@@ -47,7 +58,7 @@ that starts from the same resumed snapshot and a fresh copy of its raw disk.
  scp batch binary           ----->   /tmp/<batch>
 
  ssh: NVME_BDF run          ----->   zig test runner drives the controller
-                                     through libvfn: admin queue, doorbells,
+                                     through libvfn: queues, doorbells,
                                      CQEs, no kernel NVMe driver in between
                             <-----   stdout, stderr, exit code
 
@@ -83,6 +94,24 @@ or the override.
 The promotion path for a change is: hack locally with `-Dlibvfn-src`, push to
 the fork, then bump the SHA and hash in `build.zig.zon` via
 `zig fetch <archive-url>` so everyone else picks it up.
+
+## Writing tests in C? (a sketch)
+
+The test batch binaries are Zig programs, but libvfn is a C library, and nothing
+in nvme-tests outright prevents writing tests in C.
+`./src/probe.c` was translated from `./src/probe.zig` and compiled using the Zig
+toolchain like so:
+
+```sh
+zig build libvfn-src   # materialize the fetched/overridden tree at zig-out/libvfn-src
+zig cc -c src/probe.c -o /tmp/probe.o \
+  -Izig-out/libvfn-src/include -Izig-out/libvfn-src/src \
+  -Izig-out/libvfn-src/ccan -Ivendor
+```
+
+If deemed valuable, then `batch.run_all` could be extended to detect if the test
+program has the `.c` extension, and if so, compile programs as shown above.
+The cost would be maintaining data-structures in two languages, however.
 
 ## Building the book
 

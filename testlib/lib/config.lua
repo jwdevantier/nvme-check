@@ -84,14 +84,6 @@ function M.qemu_bin(arch)
 	return a.bin
 end
 
--- qemu_img() -> string? — the configured qemu-img binary.
----@return string?
-function M.qemu_img()
-	local q = M.get().qemu
-	if type(q) ~= "table" then return nil end
-	return q.img
-end
-
 -- build_nix() -> boolean? — explicit nix preference (true = always use
 -- `nix develop`, false = never), nil = auto-detect (nix when available).
 ---@return boolean?

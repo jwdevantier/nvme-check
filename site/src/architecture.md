@@ -37,16 +37,14 @@ knows NVMe, the Lua side knows QEMU, and neither reaches across.
 
 `src/vfn/` stays close to the upstream C API: a direct, predictable mapping
 rather than an opinionated wrapper. Conveniences belong in the separate
-`vfntest` layer, extracted as common patterns emerge. That layer must not grow
-into a second NVMe abstraction API unless experience proves the abstraction is
-warranted.
+`vfntest` layer, extracted if- and as common patterns emerge.
 
 ### spec.zig is pure
 
 `spec.zig` models the suite on the wire: structures libvfn does not already
 declare, encoders and decoders, and expectation predicates, plus `test {}`
-blocks over synthetic buffers. It is the only thing on the host `zig build
-test` path. NVMe is little-endian on the wire; the little-endian conversions
+blocks over synthetic buffers. Its tests run on the host with `zig build test`,
+as do the modules under `src/`. NVMe is little-endian on the wire; the little-endian conversions
 living here are what make the same test code correct on big-endian s390x.
 
 ## The architecture matrix
