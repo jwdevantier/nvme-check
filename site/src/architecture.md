@@ -41,8 +41,9 @@ Two rules about `src/`:
 
 - `src/vfn` is a thin binding of the libvfn C API; conveniences belong in
   `src/vfntest`.
-- Wire formats — encode, decode, expectations — never live in a batch file.
-  They live in `src/nvme` (base spec) or the suite's `spec.zig` (see below).
+- Spec structures and constants are generally defined in `src/nvme`.
+    - This is the closest equivalent to `include/block/nvme.h`
+    - A test-suite MAY define non-standard deviations or vendor-specific commands, identifiers and data-structures (such as from OCP) in the suite itself.
 
 ## What a run looks like
 
@@ -103,11 +104,11 @@ Two reasons, in order of importance:
 
 ## The amd64/s390x axis exists to catch bugs
 
-The matrix is not about breadth of coverage. NVMe is little-endian on the
-wire; running the identical test binary on a little-endian (amd64, KVM) and
-a big-endian (s390x, fully emulated) guest flushes out host-endian
+The matrix is not about breadth of coverage. NVMe structures are
+little-endian; running the identical test binary on a little-endian (amd64,
+KVM) and a big-endian (s390x, fully emulated) guest flushes out host-endian
 assumptions that would otherwise hide until someone ran the test on real
-big-endian hardware. This is why `spec.zig` holds all wire conversion:
+big-endian hardware. This is why `spec.zig` holds all byte-order conversion:
 endian-correctness is localized, testable on the host, and identical across
 batches.
 
@@ -143,12 +144,3 @@ from that same resumed snapshot and a fresh copy of its raw disk. The live
 disks are large, disposable artifacts — keeping them under the
 already-gitignored `.makac/` means `rm -rf .makac` is a complete reset.
 
-## Known wart: the shared wire module is thin
-
-`src/nvme/nvme.zig` is intended to be *the* shared model of the base spec —
-same role the `hw/nvme/nvme.h` and `include/block/nvme.h` headers play in
-QEMU — with suites adding local structures only when genuinely necessary
-(e.g. a TP not yet integrated upstream). Today the module is skeletal and
-`tests/tp4176/spec.zig` is carrying structures that belong in it. This should
-be fixed before the project is broadly public; when it is, "suite-local
-`spec.zig`" shrinks to strictly TP-specific layouts.

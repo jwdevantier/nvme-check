@@ -31,7 +31,7 @@ so on).
 ```zig
 // tests/tp4176/batches/example.zig
 const common = @import("common");
-const spec = @import("spec");
+const spec = @import("common").spec;
 
 test "rate limit: identify shows support" {
     _ = try common.ctrl(); // opens the controller from NVME_BDF
@@ -40,11 +40,14 @@ test "rate limit: identify shows support" {
 }
 ```
 
-`common` and `spec` are module imports wired by `build.zig`, not relative
-paths.
+`common` is a module import wired by `build.zig` (only when
+`tests/<suite>/common.zig` exists — see below); the suite's spec
+definitions, `spec.zig`, are an ordinary file re-exported from it as
+`common.spec`, with no `build.zig` involvement.
 
-Wire formats and expectations belong in `spec.zig`, not in the batch. If you
-find yourself writing an encoder or decoder in a batch file, move it.
+Spec structures, decoders and expectations belong in `spec.zig`, not in the
+batch. If you find yourself defining a structure layout or an encoder in a
+batch file, move it.
 
 ### 2. Register the batch in the workflow
 
@@ -73,30 +76,39 @@ no edit — but the workflow entry *is* the registration: until a row in
 
 ## Starting a new suite
 
+Strictly required: a `batches/` directory with at least one program, and a
+`workflow.lua`. Everything else below is the recommended skeleton — the
+build registers `common.zig` only if the file exists, and the spec
+definitions are the suite's own file, so a suite with no shared setup needs
+neither.
+
 1. `mkdir tests/<suite>` with:
-   - `spec.zig` — the pure wire model plus host-side unit tests. If the suite
-     needs little-endian wire conversion helpers, put them here (this is what
-     keeps s390x honest).
-   - `common.zig` — shared batch setup (controller open from `NVME_BDF`,
-     common teardown).
-   - `workflow.lua` — model it on `tests/tp4176/workflow.lua`: an `nvme()`
-     device-spec factory and a `batches` table passed to
+   - `workflow.lua` — required; model it on `tests/tp4176/workflow.lua`: an
+     `nvme()` device-spec factory and a `batches` table passed to
      `batch.run_all("<suite>", batches)`.
-   - `batches/` — at least a `smoke.zig` that proves the device comes up with
-     the feature enabled.
+   - `batches/` — required; at least a `smoke.zig` that proves the device
+     comes up with the feature enabled.
+   - `common.zig` — recommended; shared batch setup (controller open from
+     `NVME_BDF`, common teardown). Once it exists, `build.zig` exposes it to
+     batches as the `common` import — no build edit needed.
+   - `spec.zig` — recommended when the suite defines its own spec
+     structures; constants, layouts and decoders plus host-side unit tests,
+     imported from `common.zig` as
+     `pub const spec = @import("spec.zig");`. If the suite needs
+     little-endian conversion helpers, put them here (this is what
+     keeps s390x honest).
    - `README.md` — what the suite specifies, which QEMU implements it, and any
      caveats.
-2. Add `"tests/<suite>/spec.zig"` to `test_roots` in `build.zig`. That is the
-   only build change a new suite needs; batch programs are self-contained and
-   referenced by path from the workflow.
-3. Verify `zig build test` covers the new `spec.zig` unit tests on the host,
+2. If the suite has a `spec.zig` with unit tests, add
+   `"tests/<suite>/spec.zig"` to `test_roots` in `build.zig`. That is the
+   only build change a new suite can need; batch programs are self-contained
+   and referenced by path from the workflow.
+3. Verify `zig build test` covers the suite's unit tests on the host,
    then run a guest smoke batch on one architecture before filling out the
    matrix.
 
 ## Portability checklist
 
-- [ ] No host-endian assumptions outside `spec.zig` helpers.
-- [ ] All wire encode and decode goes through `spec.zig`.
 - [ ] The batch runs identically on amd64 and s390x (`./nvme-check.lua --list`
       to confirm it appears on both).
 - [ ] Slow or poll-heavy batches are tagged `"slow"`.

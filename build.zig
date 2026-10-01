@@ -193,7 +193,7 @@ pub fn build(b: *std.Build) void {
     const vfn_c = tc.createModule();
 
     // Zig-facing infra modules (DESIGN.md §3): thin libvfn binding, shared
-    // NVMe wire types, test-support conveniences. Batch programs and host
+    // NVMe spec structures, test-support conveniences. Batch programs and host
     // unit tests import these as "vfn", "nvme", "vfntest".
     const vfn_zig = b.createModule(.{
         .root_source_file = b.path("src/vfn/vfn.zig"),
@@ -228,7 +228,7 @@ pub fn build(b: *std.Build) void {
     // `nvmecheck:build` makac action (DESIGN.md §8); the output lands in
     // <prefix>/bin/<program-name>. The suite's common.zig, if present, is
     // exposed as the named import "common" next to the batch program; anything
-    // else a suite needs (its wire model, helpers) is reached through common's
+    // else a suite needs (its spec definitions, helpers) is reached through common's
     // re-exports as ordinary file imports, so adding a suite needs no
     // build.zig change here.
     if (program) |prog| {

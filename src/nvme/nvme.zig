@@ -1,5 +1,5 @@
-//! Shared NVMe wire types and decoders (DESIGN.md §3). Generic structures
-//! that libvfn already declares are re-exported, not duplicated; TP-specific
+//! Shared NVMe spec structures. Generic structures that libvfn already
+//! declares are re-exported, not duplicated; TP-specific
 //! layouts live with the TP (e.g. tests/<tp>/spec.zig).
 
 const std = @import("std");

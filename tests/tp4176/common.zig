@@ -6,7 +6,7 @@ const vfn = @import("vfn");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
 
-/// The suite's wire model; batches reach it as @import("common").spec (an
+/// The suite's spec definitions; batches reach them as @import("common").spec (an
 /// ordinary file import — the build no longer wires spec.zig as a module).
 pub const spec = @import("spec.zig");
 

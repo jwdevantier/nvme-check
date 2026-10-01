@@ -1,4 +1,4 @@
-//! TP4176 (Rate Limiting) wire model — the spec side (DESIGN.md §4).
+//! TP4176 (Rate Limiting) spec definitions — the spec side (DESIGN.md §4).
 //!
 //! Pure: layouts, field offsets, command builders, decoders. Host-testable
 //! over synthetic buffers (`zig build test`); no device, no libvfn calls.

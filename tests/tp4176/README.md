@@ -26,7 +26,8 @@ controller is only ever touched by tests that share a batch.
 | `feature`  | `batches/feature.zig`  | Set/Get Features 28h round-trip + rejections; Async Event Config RLCCN |
 | `aer`      | `batches/aer.zig`      | Full AER flow: RLCCN enable → event on config change |
 
-The pure wire model lives in `spec.zig` and is unit-tested on the host
+The spec definitions are pure (no device, no libvfn calls), live in
+`spec.zig`, and are unit-tested on the host
 (`zig build test`); the `batches/` programs are the device-facing cases.
 
 ## Run
