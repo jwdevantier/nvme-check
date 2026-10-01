@@ -11,3 +11,4 @@
 - [Architecture](architecture.md)
 - [Writing tests](writing-tests.md)
 - [Developer notes](developer-notes.md)
+- [References](references.md)
