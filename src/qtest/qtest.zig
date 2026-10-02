@@ -2,13 +2,12 @@
 //!
 //! Talks the line-based qtest protocol to a QEMU spawned with
 //! `-accel qtest -qtest unix:<sock>` (see qtest-vs-vfio-research report §3):
-//! QEMU connects to a socket WE listen on; requests get one terminal
-//! response line starting with OK/FAIL/ERR; async `IRQ` lines may interleave
-//! and are skipped (level tracking is a TODO until a test needs it).
+//! QEMU connects to sockets WE listen on; requests get one terminal response
+//! line starting with OK/FAIL/ERR; async `IRQ` lines may interleave and are
+//! level-cached. A second socket carries a QMP monitor (JSON lines; greeting
+//! + qmp_capabilities handshake; events counted and skipped).
 //!
-//! Only what the nvme-test.c port needs: endianness, in/out{l},
-//! read/write{b,w,l,q}, clock_step. recv timeouts are fail-closed (a hang is
-//! a FAIL, not a stuck runner).
+//! recv timeouts are fail-closed (a hang is a FAIL, not a stuck runner).
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -51,6 +50,69 @@ fn deleteSockFile(path: []const u8) void {
     _ = linux.unlinkat(linux.AT.FDCWD, buf[0..path.len :0].ptr, 0);
 }
 
+fn setRecvTimeout(fd: i32) Error!void {
+    const tv: linux.timeval = .{ .sec = 15, .usec = 0 };
+    const rc = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
+    if (errno(rc) != .SUCCESS) return error.Syscall;
+}
+
+/// Bind+listen a unix socket (with fail-closed recv timeout). QEMU connects
+/// out to it — see the socket-chardev direction footgun, report §3.1.
+fn unixListener(path: []const u8) Error!i32 {
+    deleteSockFile(path);
+    const rc = linux.socket(linux.AF.UNIX, linux.SOCK.STREAM, 0);
+    if (errno(rc) != .SUCCESS) return error.Syscall;
+    const fd: i32 = @intCast(rc);
+    var addr: linux.sockaddr.un = .{ .path = undefined };
+    if (path.len >= addr.path.len) return error.Syscall;
+    @memset(&addr.path, 0);
+    @memcpy(addr.path[0..path.len], path);
+    if (errno(linux.bind(fd, @ptrCast(&addr), @intCast(@sizeOf(linux.sockaddr.un)))) != .SUCCESS)
+        return error.Syscall;
+    if (errno(linux.listen(fd, 1)) != .SUCCESS) return error.Syscall;
+    try setRecvTimeout(fd);
+    return fd;
+}
+
+fn acceptOne(lfd: i32) Error!i32 {
+    const cfd = linux.accept4(lfd, null, null, 0);
+    if (errno(cfd) != .SUCCESS) return error.Timeout; // usually: QEMU never connected
+    _ = linux.close(lfd);
+    const fd: i32 = @intCast(cfd);
+    try setRecvTimeout(fd);
+    return fd;
+}
+
+fn writeAllFd(fd: i32, bytes: []const u8) Error!void {
+    var off: usize = 0;
+    while (off < bytes.len) {
+        const rc = linux.write(fd, bytes.ptr + off, bytes.len - off);
+        if (errno(rc) != .SUCCESS) return error.Syscall;
+        off += rc;
+    }
+}
+
+/// One line from fd, without the trailing newline. Slice points into `buf`;
+/// valid until the next readLineFd on the same buffer.
+fn readLineFd(fd: i32, buf: []u8, len: *usize) Error![]const u8 {
+    while (true) {
+        if (std.mem.indexOfScalar(u8, buf[0..len.*], '\n')) |i| {
+            const line = buf[0..i];
+            const rest = len.* - (i + 1);
+            std.mem.copyForwards(u8, buf[0..rest], buf[i + 1 .. len.*]);
+            len.* = rest;
+            return line;
+        }
+        if (len.* == buf.len) return error.Protocol; // line overlong
+        const rc = linux.read(fd, buf[len.*..].ptr, buf.len - len.*);
+        const e = errno(rc);
+        if (e == .AGAIN) return error.Timeout;
+        if (e != .SUCCESS) return error.Syscall;
+        if (rc == 0) return error.Protocol; // QEMU hung up
+        len.* += rc;
+    }
+}
+
 pub const MAX_IRQ = 1024;
 
 /// Parse "IRQ raise <n>" / "IRQ lower <n>"; null for anything else.
@@ -81,13 +143,131 @@ pub const Session = struct {
     allocator: std.mem.Allocator,
     io_threaded: std.Io.Threaded,
     child: std.process.Child,
-    fd: i32,
-    listen_fd: i32,
+    fd: i32, // qtest protocol socket
+    qmp_fd: i32, // QMP monitor socket
     sock_path: []u8,
+    qmp_path: []u8,
     rbuf: [64 * 1024]u8 = undefined,
     rlen: usize = 0,
+    qbuf: [64 * 1024]u8 = undefined,
+    qlen: usize = 0,
     irq_seen: [MAX_IRQ]bool = @splat(false),
     irq_level: [MAX_IRQ]bool = @splat(false),
+    event_count: u64 = 0, // QMP events skipped as responses so far
+
+    /// Spawn `qemu_bin` with `-qtest unix:<sock>` plus a QMP monitor
+    /// (`-chardev socket -mon ...,mode=control`) plus the given extra args,
+    /// with QEMU connecting out to two sockets we pre-bind. Caller owns;
+    /// call deinit().
+    pub fn spawn(allocator: std.mem.Allocator, qemu_bin: []const u8, extra_args: []const []const u8) Error!*Session {
+        const s = try allocator.create(Session);
+        errdefer allocator.destroy(s);
+        s.allocator = allocator;
+
+        const pid = linux.getpid();
+        s.sock_path = try std.fmt.allocPrint(allocator, "/tmp/nvme-qtest-{d}.sock", .{pid});
+        s.qmp_path = try std.fmt.allocPrint(allocator, "/tmp/nvme-qtest-{d}.qmp", .{pid});
+        errdefer allocator.free(s.qmp_path);
+
+        const lfd = try unixListener(s.sock_path);
+        const qfd = try unixListener(s.qmp_path);
+
+        const qtest_arg = std.fmt.allocPrint(allocator, "unix:{s}", .{s.sock_path}) catch return error.OutOfMemory;
+        defer allocator.free(qtest_arg);
+        const qmp_arg = std.fmt.allocPrint(allocator, "socket,path={s},id=qmp0", .{s.qmp_path}) catch return error.OutOfMemory;
+        defer allocator.free(qmp_arg);
+        var argv: std.ArrayList([]const u8) = .empty;
+        defer argv.deinit(allocator);
+        try argv.append(allocator, qemu_bin);
+        try argv.appendSlice(allocator, &.{
+            "-qtest",   qtest_arg,
+            "-chardev", qmp_arg,
+            "-mon",     "chardev=qmp0,mode=control",
+        });
+        try argv.appendSlice(allocator, extra_args);
+
+        s.io_threaded = .init(std.heap.smp_allocator, .{});
+        s.child = std.process.spawn(s.io_threaded.io(), .{
+            .argv = argv.items,
+            .stdin = .ignore,
+            .stdout = .ignore,
+            .stderr = .inherit, // QEMU's own diagnostics ride the driver's capture
+        }) catch return error.SpawnFailed;
+
+        s.fd = acceptOne(lfd) catch |e| {
+            s.child.kill(s.io_threaded.io());
+            return e;
+        };
+        s.qmp_fd = acceptOne(qfd) catch |e| {
+            s.child.kill(s.io_threaded.io());
+            return e;
+        };
+        s.rlen = 0;
+        s.qlen = 0;
+
+        // handshake 1: this client is x86-only today (PCI config via
+        // ioports); refuse a big-endian target rather than corrupt silently.
+        const endian = try s.cmd("endianness");
+        if (!std.mem.eql(u8, endian, "little")) return error.NotLittleEndian;
+
+        // handshake 2: QMP greeting + capabilities negotiation
+        const greeting = try s.qmpReadLine();
+        if (std.mem.indexOf(u8, greeting, "\"QMP\"") == null) return error.Protocol;
+        _ = try s.qmpExecute("qmp_capabilities", null);
+
+        g_active = s;
+        return s;
+    }
+
+    pub fn deinit(s: *Session) void {
+        if (g_active == s) g_active = null;
+        // graceful when the VM is healthy; kill covers everything else
+        if (s.qmp_fd >= 0) _ = s.qmpExecute("quit", null) catch {};
+        // 0.16 Child.kill kills AND reaps (sets id = null); a wait() after
+        // it asserts. So: kill, done.
+        s.child.kill(s.io_threaded.io());
+        if (s.fd >= 0) _ = linux.close(s.fd);
+        if (s.qmp_fd >= 0) _ = linux.close(s.qmp_fd);
+        s.io_threaded.deinit();
+        deleteSockFile(s.sock_path);
+        deleteSockFile(s.qmp_path);
+        s.allocator.free(s.sock_path);
+        s.allocator.free(s.qmp_path);
+        s.allocator.destroy(s);
+    }
+
+    // --- qtest protocol ----------------------------------------------------
+
+    fn readLine(s: *Session) Error![]const u8 {
+        return readLineFd(s.fd, &s.rbuf, &s.rlen);
+    }
+
+    var cmd_buf: [4096]u8 = undefined; // single-threaded test runner
+
+    fn fmt(comptime f: []const u8, args: anytype) Error![]const u8 {
+        return std.fmt.bufPrint(&cmd_buf, f, args) catch error.Protocol;
+    }
+
+    /// Send a command; return everything after "OK ", skipping async IRQ
+    /// lines (level-cached via noteIrq). FAIL/ERR raise error.Protocol.
+    pub fn cmd(s: *Session, line: []const u8) Error![]const u8 {
+        try writeAllFd(s.fd, line);
+        try writeAllFd(s.fd, "\n");
+        while (true) {
+            const rsp = try s.readLine();
+            if (std.mem.startsWith(u8, rsp, "IRQ")) {
+                s.noteIrq(rsp);
+                continue;
+            }
+            if (std.mem.startsWith(u8, rsp, "OK")) {
+                return std.mem.trim(u8, rsp[2..], " ");
+            }
+            if (std.mem.startsWith(u8, rsp, "FAIL") or std.mem.startsWith(u8, rsp, "ERR")) {
+                std.debug.print("qtest: FAIL/ERR for '{s}': {s}\n", .{ line, rsp });
+                return error.Protocol;
+            }
+        }
+    }
 
     /// Record an async IRQ line (called from cmd(); public for tests).
     pub fn noteIrq(s: *Session, line: []const u8) void {
@@ -103,149 +283,6 @@ pub const Session = struct {
         return s.irq_level[irq];
     }
 
-    /// Spawn `qemu_bin` with `-qtest unix:<fresh socket>` plus the given
-    /// extra args, bind/listen the socket first (QEMU is the connecting
-    /// side), then accept. Caller owns; call deinit().
-    pub fn spawn(allocator: std.mem.Allocator, qemu_bin: []const u8, extra_args: []const []const u8) Error!*Session {
-        const s = try allocator.create(Session);
-        errdefer allocator.destroy(s);
-        s.allocator = allocator;
-
-        const pid = linux.getpid();
-        s.sock_path = try std.fmt.allocPrint(allocator, "/tmp/nvme-qtest-{d}.sock", .{pid});
-        deleteSockFile(s.sock_path);
-
-        const lfd: i32 = blk: {
-            const rc = linux.socket(linux.AF.UNIX, linux.SOCK.STREAM, 0);
-            if (errno(rc) != .SUCCESS) return error.Syscall;
-            break :blk @intCast(rc);
-        };
-        var addr: linux.sockaddr.un = .{ .path = undefined };
-        if (s.sock_path.len >= addr.path.len) return error.Syscall;
-        @memset(&addr.path, 0);
-        @memcpy(addr.path[0..s.sock_path.len], s.sock_path);
-        if (errno(linux.bind(lfd, @ptrCast(&addr), @intCast(@sizeOf(linux.sockaddr.un)))) != .SUCCESS)
-            return error.Syscall;
-        if (errno(linux.listen(lfd, 1)) != .SUCCESS) return error.Syscall;
-        // fail-closed: an unreachable QEMU must not wedge the runner
-        try setRecvTimeout(lfd);
-        s.listen_fd = lfd;
-
-        const qtest_arg = std.fmt.allocPrint(allocator, "unix:{s}", .{s.sock_path}) catch return error.OutOfMemory;
-        defer allocator.free(qtest_arg);
-        var argv: std.ArrayList([]const u8) = .empty;
-        defer argv.deinit(allocator);
-        try argv.append(allocator, qemu_bin);
-        try argv.appendSlice(allocator, &.{ "-qtest", qtest_arg });
-        try argv.appendSlice(allocator, extra_args);
-
-        s.io_threaded = .init(std.heap.smp_allocator, .{});
-        s.child = std.process.spawn(s.io_threaded.io(), .{
-            .argv = argv.items,
-            .stdin = .ignore,
-            .stdout = .ignore,
-            .stderr = .inherit, // QEMU's own diagnostics ride the driver's capture
-        }) catch return error.SpawnFailed;
-
-        const cfd = linux.accept4(lfd, null, null, 0);
-        if (errno(cfd) != .SUCCESS) {
-            _ = linux.close(lfd);
-            s.child.kill(s.io_threaded.io());
-            return error.Timeout;
-        }
-        _ = linux.close(lfd);
-        s.listen_fd = -1;
-        s.fd = @intCast(cfd);
-        try setRecvTimeout(s.fd);
-        s.rlen = 0;
-
-        // handshake: this client is x86-only today (PCI config via ioports);
-        // refuse to run a test against a big-endian target by accident.
-        const endian = try s.cmd("endianness");
-        if (!std.mem.eql(u8, endian, "little")) return error.NotLittleEndian;
-        g_active = s;
-        return s;
-    }
-
-    pub fn deinit(s: *Session) void {
-        // 0.16 Child.kill kills AND reaps (sets id = null); a wait() after
-        // it asserts. So: kill, done.
-        if (g_active == s) g_active = null;
-        s.child.kill(s.io_threaded.io());
-        if (s.fd >= 0) _ = linux.close(s.fd);
-        s.io_threaded.deinit();
-        deleteSockFile(s.sock_path);
-        s.allocator.free(s.sock_path);
-        s.allocator.destroy(s);
-    }
-
-    pub fn socket_path(s: *const Session) []const u8 {
-        return s.sock_path;
-    }
-
-    fn setRecvTimeout(fd: i32) Error!void {
-        const tv: linux.timeval = .{ .sec = 15, .usec = 0 };
-        const rc = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
-        if (errno(rc) != .SUCCESS) return error.Syscall;
-    }
-
-    fn writeAll(s: *Session, bytes: []const u8) Error!void {
-        var off: usize = 0;
-        while (off < bytes.len) {
-            const rc = linux.write(s.fd, bytes.ptr + off, bytes.len - off);
-            if (errno(rc) != .SUCCESS) return error.Syscall;
-            off += rc;
-        }
-    }
-
-    /// One line from the socket, without the trailing newline. Slice points
-    /// into the session's buffer; valid until the next readLine().
-    fn readLine(s: *Session) Error![]const u8 {
-        while (true) {
-            if (std.mem.indexOfScalar(u8, s.rbuf[0..s.rlen], '\n')) |i| {
-                const line = s.rbuf[0..i];
-                const rest = s.rlen - (i + 1);
-                std.mem.copyForwards(u8, s.rbuf[0..rest], s.rbuf[i + 1 .. s.rlen]);
-                s.rlen = rest;
-                return line;
-            }
-            if (s.rlen == s.rbuf.len) return error.Protocol; // line overlong
-            const rc = linux.read(s.fd, s.rbuf[s.rlen..].ptr, s.rbuf.len - s.rlen);
-            const e = errno(rc);
-            if (e == .AGAIN) return error.Timeout;
-            if (e != .SUCCESS) return error.Syscall;
-            if (rc == 0) return error.Protocol; // QEMU hung up
-            s.rlen += rc;
-        }
-    }
-
-    var cmd_buf: [4096]u8 = undefined; // single-threaded test runner
-
-    fn fmt(comptime s: []const u8, args: anytype) Error![]const u8 {
-        return std.fmt.bufPrint(&cmd_buf, s, args) catch error.Protocol;
-    }
-
-    /// Send a command; return everything after "OK ", skipping async IRQ
-    /// lines. FAIL/ERR responses raise error.Protocol.
-    pub fn cmd(s: *Session, line: []const u8) Error![]const u8 {
-        try s.writeAll(line);
-        try s.writeAll("\n");
-        while (true) {
-            const rsp = try s.readLine();
-            if (std.mem.startsWith(u8, rsp, "IRQ")) {
-                s.noteIrq(rsp); // async; level-cached, never a response
-                continue;
-            }
-            if (std.mem.startsWith(u8, rsp, "OK")) {
-                return std.mem.trim(u8, rsp[2..], " ");
-            }
-            if (std.mem.startsWith(u8, rsp, "FAIL") or std.mem.startsWith(u8, rsp, "ERR")) {
-                std.debug.print("qtest: FAIL/ERR for '{s}': {s}\n", .{ line, rsp });
-                return error.Protocol;
-            }
-        }
-    }
-
     fn numRsp(rsp: []const u8) Error!u64 {
         return std.fmt.parseInt(u64, rsp, 0) catch error.Protocol;
     }
@@ -253,13 +290,11 @@ pub const Session = struct {
     // --- bus ops -----------------------------------------------------------
 
     pub fn inl(s: *Session, port: u16) Error!u32 {
-        const c = try fmt("inl 0x{x}", .{port});
-        return @intCast(try numRsp(try s.cmd(c)));
+        return @intCast(try numRsp(try s.cmd(try fmt("inl 0x{x}", .{port}))));
     }
 
     pub fn outl(s: *Session, port: u16, val: u32) Error!void {
-        const c = try fmt("outl 0x{x} 0x{x}", .{ port, val });
-        _ = try s.cmd(c);
+        _ = try s.cmd(try fmt("outl 0x{x} 0x{x}", .{ port, val }));
     }
 
     pub fn readb(s: *Session, a: u64) Error!u8 {
@@ -276,8 +311,7 @@ pub const Session = struct {
     }
 
     fn readN(s: *Session, comptime op: []const u8, a: u64) Error!u64 {
-        const c = try fmt(op ++ " 0x{x}", .{a});
-        return numRsp(try s.cmd(c));
+        return numRsp(try s.cmd(try fmt(op ++ " 0x{x}", .{a})));
     }
 
     pub fn writeb(s: *Session, a: u64, v: u8) Error!void {
@@ -294,20 +328,17 @@ pub const Session = struct {
     }
 
     fn writeN(s: *Session, comptime op: []const u8, a: u64, v: u64) Error!void {
-        const c = try fmt(op ++ " 0x{x} 0x{x}", .{ a, v });
-        _ = try s.cmd(c);
+        _ = try s.cmd(try fmt(op ++ " 0x{x} 0x{x}", .{ a, v }));
     }
 
     /// Advance the virtual clock (ns). Requires -accel qtest.
     pub fn clockStep(s: *Session, ns: u64) Error!void {
-        const c = try fmt("clock_step 0x{x}", .{ns});
-        _ = try s.cmd(c);
+        _ = try s.cmd(try fmt("clock_step 0x{x}", .{ns}));
     }
 
     /// memset <addr> <size> <pattern>
     pub fn memset(s: *Session, addr: u64, size: u64, pattern: u8) Error!void {
-        const c = try fmt("memset 0x{x} 0x{x} 0x{x:0>2}", .{ addr, size, pattern });
-        _ = try s.cmd(c);
+        _ = try s.cmd(try fmt("memset 0x{x} 0x{x} 0x{x:0>2}", .{ addr, size, pattern }));
     }
 
     /// write <addr> <size> 0x<hex> — bulk guest-memory write (hex on the
@@ -328,8 +359,7 @@ pub const Session = struct {
 
     /// read <addr> <size> -> 0x<hex>. Fills `out` (out.len bytes).
     pub fn memRead(s: *Session, addr: u64, out: []u8) Error!void {
-        const c = try fmt("read 0x{x} 0x{x}", .{ addr, out.len });
-        const rsp = try s.cmd(c);
+        const rsp = try s.cmd(try fmt("read 0x{x} 0x{x}", .{ addr, out.len }));
         if (rsp.len < 2 + out.len * 2 or !std.mem.startsWith(u8, rsp, "0x")) return error.Protocol;
         var i: usize = 0;
         while (i < out.len) : (i += 1) {
@@ -352,11 +382,39 @@ pub const Session = struct {
 
     /// b64read <addr> <size> -> OK <base64>. Fills `out`.
     pub fn memReadB64(s: *Session, addr: u64, out: []u8) Error!void {
-        const c = try fmt("b64read 0x{x} 0x{x}", .{ addr, out.len });
-        const rsp = try s.cmd(c);
+        const rsp = try s.cmd(try fmt("b64read 0x{x} 0x{x}", .{ addr, out.len }));
         const dec = std.base64.standard.Decoder;
         const want = dec.calcSizeForSlice(rsp) catch return error.Protocol;
         if (want != out.len) return error.Protocol;
         dec.decode(out, rsp) catch return error.Protocol;
+    }
+
+    // --- QMP monitor -------------------------------------------------------
+
+    fn qmpReadLine(s: *Session) Error![]const u8 {
+        return readLineFd(s.qmp_fd, &s.qbuf, &s.qlen);
+    }
+
+    /// {"execute": name, "arguments": args?} — one JSON reply, QMP events
+    /// skipped and counted (s.event_count). The reply's JSON text is
+    /// returned raw (qmp replies fit one line); an {"error": ...} reply
+    /// raises error.Protocol. Structured parsing stays the caller's business
+    /// until a test needs it.
+    pub fn qmpExecute(s: *Session, name: []const u8, args_json: ?[]const u8) Error![]const u8 {
+        const line = if (args_json) |a|
+            std.fmt.bufPrint(&cmd_buf, "{{\"execute\": \"{s}\", \"arguments\": {s}}}", .{ name, a }) catch return error.Protocol
+        else
+            std.fmt.bufPrint(&cmd_buf, "{{\"execute\": \"{s}\"}}", .{name}) catch return error.Protocol;
+        try writeAllFd(s.qmp_fd, line);
+        try writeAllFd(s.qmp_fd, "\n");
+        while (true) {
+            const rsp = try s.qmpReadLine();
+            if (std.mem.startsWith(u8, rsp, "{\"event\"")) {
+                s.event_count += 1;
+                continue;
+            }
+            if (std.mem.startsWith(u8, rsp, "{\"error\"")) return error.Protocol;
+            return rsp;
+        }
     }
 };
