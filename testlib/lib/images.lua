@@ -26,15 +26,16 @@ local config = require("./config")
 M.ROOT_PASSWORD_HASH =
 "$6$rounds=4096$dZvpjkhL4EwsC3Wi$lJ8pB0hyROPYiWkCV0meWs9sqYTgiNnXxzBCn/XztnnwHBJVU11/0yRnsCrlpBKrH8k4xvlkVPbcPcqSt.tTL0"
 
+--- Return designated SSH public key string, stripped of trailing whitespace.
 ---@return string
 local function read_pubkey()
-	local f = io.open(config.ssh_pubkey())
-	if f then
-		local s = (f:read("a"):gsub("%s+$", ""))
-		f:close()
-		return s
-	end
-	return ""
+  local f = io.open(config.ssh_pubkey())
+  if f then
+    local s = (f:read("a"):gsub("%s+$", ""))
+    f:close()
+    return s
+  end
+  return ""
 end
 
 -- persisted per-arch instance id (a per-run id would invalidate the
