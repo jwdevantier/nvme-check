@@ -7,6 +7,7 @@
 local zigtest = require("./zigtest")
 local base = require("./base")
 local libvfn_simple = require("./libvfn_simple")
+local qtest = require("./qtest")
 
 return {
   -- the harness drives QEMU through the qemu package's actions
@@ -19,5 +20,6 @@ return {
     -- tmp-decomplect-vfio-and-tests.md.
     base = base.run,
     ["libvfn-simple"] = libvfn_simple.run,
+    qtest = qtest.run,
   },
 }

@@ -27,7 +27,9 @@ local function shquote(s)
 end
 
 -- build(with) -> { changed?, err?, out = { path, name } }
--- with = { arch, program, name?, libvfn_src? }   (libvfn_src overrides the pinned zon dep)
+-- with = { arch, program, name?, host?, libvfn_src? }   (libvfn_src overrides the pinned zon dep)
+--   host=true builds for the host (no -Dtarget/-Dstatic); the default
+--   cross-compiles a static binary for the guest arch.
 ---@param with table
 ---@return table
 function M.build(with)
@@ -39,16 +41,18 @@ function M.build(with)
 	local name = sanitize(with.name or program)
 	local triple = ZIG_TARGET[arch]
 	local repo = tostring(makac.fs.cwd():path())
-	local prefix = "/tmp/nvmecheck-build-" .. arch .. "-" .. name
+	local prefix = "/tmp/nvmecheck-build-" .. arch .. (with.host and "-host-" or "-") .. name
 
 	local argv = {
 		"zig", "build",
-		"-Dtarget=" .. triple,
-		"-Dstatic=true",
 		"-Dprogram=" .. program,
 		"-Dprogram-name=" .. name,
 		"--prefix", prefix,
 	}
+	if not with.host then
+		table.insert(argv, 3, "-Dstatic=true")
+		table.insert(argv, 3, "-Dtarget=" .. triple)
+	end
 	if with.libvfn_src or config.libvfn_src() then
 		argv[#argv + 1] = "-Dlibvfn-src=" .. (with.libvfn_src or config.libvfn_src())
 	end

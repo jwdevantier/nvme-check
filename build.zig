@@ -213,6 +213,15 @@ pub fn build(b: *std.Build) void {
     nvme_zig.addImport("vfn_c", vfn_c);
     nvme_zig.linkLibrary(vfn);
 
+    // qtest-protocol client for host-side tests (no libvfn; talks to a
+    // -accel qtest QEMU over a unix socket). Imported as "qtest".
+    const qtest_zig = b.createModule(.{
+        .root_source_file = b.path("src/qtest/qtest.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
     const vfntest_zig = b.createModule(.{
         .root_source_file = b.path("src/vfntest/vfntest.zig"),
         .target = target,
@@ -247,6 +256,7 @@ pub fn build(b: *std.Build) void {
         prog_mod.addImport("vfn", vfn_zig);
         prog_mod.addImport("nvme", nvme_zig);
         prog_mod.addImport("vfntest", vfntest_zig);
+        prog_mod.addImport("qtest", qtest_zig);
 
         const common_rel = b.pathJoin(&.{ tp_dir, "common.zig" });
         const has_common = if (b.build_root.handle.access(b.graph.io, common_rel, .{})) |_| true else |_| false;
@@ -261,6 +271,7 @@ pub fn build(b: *std.Build) void {
             common_mod.addImport("vfn", vfn_zig);
             common_mod.addImport("nvme", nvme_zig);
             common_mod.addImport("vfntest", vfntest_zig);
+            common_mod.addImport("qtest", qtest_zig);
             prog_mod.addImport("common", common_mod);
         }
 
