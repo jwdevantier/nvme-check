@@ -9,6 +9,10 @@
 const std = @import("std");
 const common = @import("common");
 
+// kill the spawned QEMU when this test panics (defers do not run)
+pub const panic = std.debug.FullPanic(common.qtest.panicHook);
+
+
 const PMRCAP: u64 = 0xe00;
 const PMRCTL: u64 = 0xe04;
 const PMRSTS: u64 = 0xe08;

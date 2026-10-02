@@ -8,6 +8,10 @@
 const std = @import("std");
 const common = @import("common");
 
+// kill the spawned QEMU when this test panics (defers do not run)
+pub const panic = std.debug.FullPanic(common.qtest.panicHook);
+
+
 const CMB_SIZE: u64 = 2 * 1024 * 1024; // == device opt cmb_size_mb=2
 
 test "oob-cmb-access: CMB read-back widths and boundary behavior" {

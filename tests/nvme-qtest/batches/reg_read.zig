@@ -7,6 +7,10 @@
 const std = @import("std");
 const common = @import("common");
 
+// kill the spawned QEMU when this test panics (defers do not run)
+pub const panic = std.debug.FullPanic(common.qtest.panicHook);
+
+
 test "reg-read: CAP via 32-bit halves and 64-bit read" {
     const s = try common.spawn("", &.{});
     defer s.deinit();

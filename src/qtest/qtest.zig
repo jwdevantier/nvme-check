@@ -16,6 +16,21 @@ const errno = std.posix.errno;
 
 pub const pci = @import("pci.zig");
 
+// The live session, for the panic hook below. Single-threaded test binaries;
+// set by spawn, cleared by deinit.
+var g_active: ?*Session = null;
+
+/// Panic hook for qtest-lane programs. A failed expect() aborts the test
+/// process without running defers — which would leak the spawned QEMU. Opt in
+/// from each program root:
+///
+///     pub const panic = std.debug.FullPanic(qtest.panicHook);
+///
+pub fn panicHook(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    if (g_active) |s| s.child.kill(s.io_threaded.io());
+    std.debug.defaultPanic(msg, first_trace_addr);
+}
+
 pub const Error = error{
     Syscall,
     Timeout,
@@ -104,12 +119,14 @@ pub const Session = struct {
         // refuse to run a test against a big-endian target by accident.
         const endian = try s.cmd("endianness");
         if (!std.mem.eql(u8, endian, "little")) return error.NotLittleEndian;
+        g_active = s;
         return s;
     }
 
     pub fn deinit(s: *Session) void {
         // 0.16 Child.kill kills AND reaps (sets id = null); a wait() after
         // it asserts. So: kill, done.
+        if (g_active == s) g_active = null;
         s.child.kill(s.io_threaded.io());
         if (s.fd >= 0) _ = linux.close(s.fd);
         s.io_threaded.deinit();
