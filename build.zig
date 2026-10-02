@@ -335,6 +335,7 @@ pub fn build(b: *std.Build) void {
         "src/tests.zig",
         "src/nvme/nvme.zig",
         "src/qtest/guestmem.zig",
+        "src/qtest/qtest.zig",
         "tests/tp4176/spec.zig",
     };
     for (test_roots) |root| {

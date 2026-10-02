@@ -88,8 +88,10 @@ const Cqe = struct { cid: u16, sc: u8, sct: u3, dw0: u32 };
 fn pollCqe(s: *common.qtest.Session, qid: usize) !Cqe {
     const cq: u64 = if (qid == 0) ACQ else IOCQ;
     var cqe: [16]u8 = undefined;
+    // virtual-time budget; I/O completion may be wall-clock driven (BH),
+    // so a slow host burn-in needs headroom (flaked at 1000 on a busy box)
     var spins: usize = 0;
-    while (spins < 1000) : (spins += 1) {
+    while (spins < 5000) : (spins += 1) {
         try s.memRead(cq + g_cq_head[qid] * 16, cqe[0..]);
         const dw0 = std.mem.readInt(u32, cqe[0..4], .little);
         const cid = std.mem.readInt(u16, cqe[12..14], .little);

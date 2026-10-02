@@ -50,6 +50,32 @@ fn deleteSockFile(path: []const u8) void {
     _ = linux.unlinkat(linux.AT.FDCWD, buf[0..path.len :0].ptr, 0);
 }
 
+pub const MAX_IRQ = 1024;
+
+/// Parse "IRQ raise <n>" / "IRQ lower <n>"; null for anything else.
+pub fn parseIrqLine(line: []const u8) ?struct { irq: u32, level: bool } {
+    var it = std.mem.tokenizeScalar(u8, line, ' ');
+    const tag = it.next() orelse return null;
+    if (!std.mem.eql(u8, tag, "IRQ")) return null;
+    const dir = it.next() orelse return null;
+    const num = it.next() orelse return null;
+    const irq = std.fmt.parseInt(u32, num, 10) catch return null;
+    if (irq >= MAX_IRQ) return null;
+    const level = if (std.mem.eql(u8, dir, "raise")) true else if (std.mem.eql(u8, dir, "lower")) false else return null;
+    return .{ .irq = irq, .level = level };
+}
+
+test "parseIrqLine" {
+    const r = parseIrqLine("IRQ raise 5").?;
+    try std.testing.expectEqual(@as(u32, 5), r.irq);
+    try std.testing.expect(r.level);
+    const l = parseIrqLine("IRQ lower 0").?;
+    try std.testing.expect(!l.level);
+    try std.testing.expect(parseIrqLine("OK") == null);
+    try std.testing.expect(parseIrqLine("IRQ sideways 1") == null);
+    try std.testing.expect(parseIrqLine("IRQ raise 99999") == null);
+}
+
 pub const Session = struct {
     allocator: std.mem.Allocator,
     io_threaded: std.Io.Threaded,
@@ -59,6 +85,22 @@ pub const Session = struct {
     sock_path: []u8,
     rbuf: [64 * 1024]u8 = undefined,
     rlen: usize = 0,
+    irq_seen: [MAX_IRQ]bool = @splat(false),
+    irq_level: [MAX_IRQ]bool = @splat(false),
+
+    /// Record an async IRQ line (called from cmd(); public for tests).
+    pub fn noteIrq(s: *Session, line: []const u8) void {
+        if (parseIrqLine(line)) |e| {
+            s.irq_seen[e.irq] = true;
+            s.irq_level[e.irq] = e.level;
+        }
+    }
+
+    /// Last observed level of irq N (null if never raised/lowered).
+    pub fn irqLevel(s: *const Session, irq: u32) ?bool {
+        if (irq >= MAX_IRQ or !s.irq_seen[irq]) return null;
+        return s.irq_level[irq];
+    }
 
     /// Spawn `qemu_bin` with `-qtest unix:<fresh socket>` plus the given
     /// extra args, bind/listen the socket first (QEMU is the connecting
@@ -189,7 +231,10 @@ pub const Session = struct {
         try s.writeAll("\n");
         while (true) {
             const rsp = try s.readLine();
-            if (std.mem.startsWith(u8, rsp, "IRQ")) continue; // async; untracked for now
+            if (std.mem.startsWith(u8, rsp, "IRQ")) {
+                s.noteIrq(rsp); // async; level-cached, never a response
+                continue;
+            }
             if (std.mem.startsWith(u8, rsp, "OK")) {
                 return std.mem.trim(u8, rsp[2..], " ");
             }
