@@ -335,4 +335,27 @@ pub const Session = struct {
             out[i] = std.fmt.parseInt(u8, rsp[2 + i * 2 ..][0..2], 16) catch return error.Protocol;
         }
     }
+
+    /// b64write <addr> <size> <base64> — like memWrite but ~4/3 wire size
+    /// instead of 2x; matters once patterns get large.
+    pub fn memWriteB64(s: *Session, addr: u64, bytes: []const u8) Error!void {
+        const enc = std.base64.standard.Encoder;
+        const b64 = s.allocator.alloc(u8, enc.calcSize(bytes.len)) catch return error.OutOfMemory;
+        defer s.allocator.free(b64);
+        _ = enc.encode(b64, bytes);
+        const c = s.allocator.alloc(u8, 64 + b64.len) catch return error.OutOfMemory;
+        defer s.allocator.free(c);
+        const line = std.fmt.bufPrint(c, "b64write 0x{x} 0x{x} {s}", .{ addr, bytes.len, b64 }) catch return error.Protocol;
+        _ = try s.cmd(line);
+    }
+
+    /// b64read <addr> <size> -> OK <base64>. Fills `out`.
+    pub fn memReadB64(s: *Session, addr: u64, out: []u8) Error!void {
+        const c = try fmt("b64read 0x{x} 0x{x}", .{ addr, out.len });
+        const rsp = try s.cmd(c);
+        const dec = std.base64.standard.Decoder;
+        const want = dec.calcSizeForSlice(rsp) catch return error.Protocol;
+        if (want != out.len) return error.Protocol;
+        dec.decode(out, rsp) catch return error.Protocol;
+    }
 };

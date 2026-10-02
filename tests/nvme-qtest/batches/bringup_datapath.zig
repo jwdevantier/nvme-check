@@ -203,7 +203,7 @@ test "bring-up + datapath: enable, identify, io queues, write/read, flush" {
     var payload: [512]u8 = undefined;
     for (&payload, 0..) |*b, i| b.* = @truncate(i / 7 + 0x41);
     {
-        try s.memWrite(WRBUF, payload[0..]);
+        try s.memWriteB64(WRBUF, payload[0..]); // also exercises b64write
         const w = buildCmd(0x01, .{ .nsid = 1, .mptr = 0, .prp1 = WRBUF, .prp2 = 0, .cdw10 = 0, .cdw11 = 0 }); // nlb=0 -> 1 block
         try submit(s, 1, w.cmd);
         try std.testing.expect((try pollCqe(s, 1)).sc == 0);
@@ -213,7 +213,7 @@ test "bring-up + datapath: enable, identify, io queues, write/read, flush" {
         try submit(s, 1, r.cmd);
         try std.testing.expect((try pollCqe(s, 1)).sc == 0);
         var back: [512]u8 = undefined;
-        try s.memRead(RDBUF, back[0..]);
+        try s.memReadB64(RDBUF, back[0..]); // also exercises b64read
         try std.testing.expectEqualSlices(u8, payload[0..], back[0..]);
     }
 
