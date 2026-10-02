@@ -14,9 +14,15 @@ pub const GuestMem = struct {
     top: u64, // one past the last RAM address (== -m size on pc)
     next: u64,
 
+    const machines = @import("machines.zig");
+
     /// 256 MiB pc-style default; bump top when the machine's -m differs.
     pub fn init() GuestMem {
-        return .{ .base = 0x0010_0000, .top = 0x1000_0000, .next = 0x0010_0000 };
+        return initFor(machines.pc);
+    }
+
+    pub fn initFor(row: machines.Row) GuestMem {
+        return .{ .base = row.ram_base, .top = row.ram_top, .next = row.ram_base };
     }
 
     pub fn alloc(self: *GuestMem, size: u64, alignment: u64) error{OutOfGuestMemory}!u64 {

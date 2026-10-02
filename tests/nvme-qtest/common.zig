@@ -12,6 +12,7 @@
 const std = @import("std");
 
 pub const qtest = @import("qtest");
+pub const machines = qtest.machines;
 pub const pci = qtest.pci;
 
 /// The device the argv below places at addr=04.0 (bus 0, dev 4, fn 0).
@@ -37,6 +38,9 @@ pub fn spawnDrive(device_opts: []const u8, qemu_args: []const []const u8, drive:
     const alloc = std.heap.smp_allocator;
     const qemu = std.c.getenv("NVME_QTEST_QEMU") orelse
         return error.QemuBinUnset; // set by the nvmecheck:qtest driver
+    const mach_env = std.c.getenv("NVME_QTEST_MACHINE"); // driver: arch row
+    const row = machines.byName(std.mem.span(mach_env orelse "pc")) orelse
+        return error.UnknownMachine;
 
     const device = try std.fmt.allocPrint(alloc, "nvme,addr=04.0,drive=drv0,serial=foo{s}", .{device_opts});
     defer alloc.free(device);
@@ -44,7 +48,7 @@ pub fn spawnDrive(device_opts: []const u8, qemu_args: []const []const u8, drive:
     var args: std.ArrayList([]const u8) = .empty;
     defer args.deinit(alloc);
     try args.appendSlice(alloc, &.{
-        "-machine", "pc",
+        "-machine", row.machine,
         "-accel",     "qtest",
         "-qtest-log", "/dev/null", // silence the protocol transcript on stderr
         "-m",       "256M",

@@ -38,7 +38,12 @@ function M.run(with)
 	})
 	if built.err then return { err = built.err } end
 
-	local res = makac.exec({ "env", "NVME_QTEST_QEMU=" .. qemu, built.out.path })
+	-- the qtest lane's machine per arch row (guest lane's q35/kvm choice is
+	-- separate); NVME_QTEST_MACHINE is read by the test's common.zig
+	local QT_MACHINE = { amd64 = "pc" }
+	local machine = QT_MACHINE[with.arch]
+		or "pc"
+	local res = makac.exec({ "env", "NVME_QTEST_QEMU=" .. qemu, "NVME_QTEST_MACHINE=" .. machine, built.out.path })
 	if res.stdout and #res.stdout > 0 then io.write(res.stdout) end
 	if res.code ~= 0 then
 		return { err = ("qtest program failed (exit %d)\nstderr:\n%s"):format(res.code, res.stderr or "") }
