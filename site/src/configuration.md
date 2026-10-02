@@ -76,7 +76,6 @@ for details
 |---|---|
 | `NVME_CONFIG` | Which config file to load (see above). |
 | `MAKAC_IMG_VERBOSE=1` | Stream the guest serial console during the first base-image build. A debugging toggle, not configuration. |
-| `NVME_BDF` | Set by the harness and read by each test binary: the PCI BDF of the freshly-bound controller inside the guest. Never set this yourself. |
 
 ---
 

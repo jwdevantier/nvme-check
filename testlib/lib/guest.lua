@@ -17,7 +17,12 @@
 --   ctx.del_nvme(id)         QMP device_del
 --   ctx.bind_vfio(name?)   hand a controller to vfio-pci; -> the controller's BDF
 --   ctx.spawn(opts?)         a second VM on the same baseline (rare; see README)
---   ctx.teardown()           stop/free anything ctx.spawn created (runner calls it)
+--   ctx.teardown()           stop/free anything ctx.spawn created
+--   ctx.down()               teardown + clean QMP quit of the VM
+--
+-- M.boot(arch, extra?) is the free-standing way to get a ctx: resume the
+-- arch baseline (archlib.up) and wrap it. Drivers call it; multi-VM tests
+-- call it repeatedly with diverging `extra` (ssh_port, vm name, ...).
 
 local archlib = require("./arch")
 local nvmelib = require("./nvme")
@@ -41,6 +46,7 @@ local nvmelib = require("./nvme")
 ---@field bind_vfio fun(): string
 ---@field spawn fun(opts?: SpawnOpts): SpawnedVm
 ---@field teardown fun()
+---@field down fun()
 
 ---@class SpawnOpts
 ---@field name? string
@@ -211,7 +217,26 @@ function M.context(arch_name, session)
 		spawned = {}
 	end
 
+	-- teardown + stop the VM with a clean QMP quit (no guest powerdown
+	-- handshake — the snapshot is reloaded on every boot anyway).
+	function ctx.down()
+		pcall(ctx.teardown)
+		archlib.down(arch_name)
+	end
+
 	return ctx
+end
+
+-- boot(arch_name, extra?) -> GuestCtx: resume the arch baseline (archlib.up,
+-- so seeding is automatic) and wrap the session in a guest context. `extra`
+-- is forwarded to archlib.up (args, ssh_port, vm name, ...) — a second VM
+-- just boots again with a distinct name and port.
+---@param arch_name ArchName
+---@param extra? table<string, any>
+---@return GuestCtx
+function M.boot(arch_name, extra)
+	local session = archlib.up(arch_name, extra)
+	return M.context(arch_name, session)
 end
 
 return M

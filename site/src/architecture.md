@@ -3,131 +3,47 @@
 
 # Architecture
 
-This page is the component map for contributors: what exists, how the pieces
-relate, and what you touch when adding a test. It follows one batch run —
-`./nvme-check.lua tp4176 -w aer` — from runner to result.
+nvme-check organizes tests into **test suites**: any child directory of
+`tests/` containing a `workflow.lua` is a suite.
 
-## Why the test runs inside the guest, off the kernel driver
+A suite describes one or more tests to run and defines the **driver** suited
+to run them (set on the suite, overridable per test). A driver is a [makac
+action](https://jwdevantier.github.io/makac/concepts/actions.html): it
+receives the test's data and does the work required to actually run the test.
+Two drivers ship with nvme-check:
 
-The controller under test is handed to `vfio-pci` in a guest VM, which takes
-the kernel's NVMe driver out of the path. That gives the test complete
-control: it composes any command — valid, edge-case, or deliberately wrong —
-and decides exactly when to ring the doorbell. Nothing between the test and
-the device interprets, coalesces, or corrects anything.
+- [`base`](drivers/base.md), where you define the function that runs the
+  test;
+- [`libvfn-simple`](drivers/libvfn-simple.md), which boots an
+  architecture-appropriate VM, hot-plugs the declared NVMe device(s),
+  compiles the program described by the test, copies it in over SCP and runs
+  it.
 
-And because the test runs in a real OS rather than in isolation, there is a
-full system around it: verifying effects out of band, with ordinary tools
-outside the test binary, is always an option.
+The `nvme-check.lua` script itself auto-discovers test suites and can
+enumerate or run tests — and provides a PyTest-inspired [tag filtering
+language](user-guide.md#selecting-tests) to run only a subset of tests based
+on how they are tagged.
 
-Everything else about the design follows from this one decision:
+## Major components
 
-- The guest image has no toolchain, so test programs are **cross-compiled
-  statically on the host** and copied in.
-- The control plane is **SSH** (plus cloud-init at image-build time).
-- QEMU's role is *device provider only*: the harness boots and hot-plugs it,
-  but never introspects the device-under-test beyond what the spec defines.
+| Component | What it is |
+|---|---|
+| `nvme-check.lua` | The test runner; discovers test suites (`tests/*/workflow.lua`), collects tests, filters tests based on provided query arguments and executes (or lists, in case of `--list`) what matched |
+| `tests/<suite>/workflow.lua` | Describes the tests to run; each test may individually specify the driver to use (`uses`) and provides the test data (`with`) to the driver |
+| `testlib/lib/selection.lua` | The filtering; turns the collected tests plus the query arguments into the list of (architecture, test) pairs to execute or list |
+| `testlib/lib/libvfn_simple.lua` | The `libvfn-simple` driver; boots the architecture's VM from its snapshot, hot-plugs and binds the declared NVMe devices, builds the test, copies it in, runs it — the exit code is the verdict |
+| `testlib/lib/base.lua` | The `base` driver; calls the test's `run` function — a raise is a FAIL, anything else a PASS |
+| `testlib/lib/arch.lua`, `guest.lua`, `nvme.lua`, `images.lua` | The VM machinery; architecture definitions, base-image builds, `guest.boot`, QMP device hot-plug and vfio-bind |
+| `build.zig` + `src/` | The build setup and shared test library; compiles each test program statically for the guest architecture.<br><br>• `src/vfn` binds the libvfn C API (conveniences belong in `src/vfntest`);<br>• `src/nvme` defines the NVMe spec structures and constants — the closest equivalent to QEMU's `include/block/nvme.h`.<br><br>Suites keep vendor-specific deviations and definitions internally |
+| `tests/<suite>/batches/*.zig` | The test programs themselves; `test {}` blocks run by zig's test runner inside the guest against the controller at `$NVME_BDF` |
 
-## The components, in order of contact
+## Architectures
 
-| Component | What it is | You touch it to |
-|---|---|---|
-| `nvme-check.lua` | The runner: discovers `tests/*/workflow.lua`, applies `-a`/`-w` selection, runs each suite | Add CLI-level selection features |
-| `tests/<suite>/workflow.lua` | The suite's batch registry: for each batch, its program path, NVMe device parameters, tags | Register or retune a batch |
-| `testlib/` (package `nvmecheck`) | The VM plumbing on makac + makac.qemu: base-image build (once per arch), snapshot resume (per batch), QMP device hot-plug, vfio-bind, build + scp + run | Change how batches are *executed* |
-| `build.zig` + `src/` | Cross-compiles each batch program statically for the guest arch | Add to the shared test library |
-| `tests/<suite>/batches/*.zig` | The tests. Ordinary `test {}` blocks, run by zig's test runner inside the guest, reading the controller BDF from `NVME_BDF` | **This is where new tests go** |
-
-Two rules about `src/`:
-
-- `src/vfn` is a thin binding of the libvfn C API; conveniences belong in
-  `src/vfntest`.
-- Spec structures and constants are generally defined in `src/nvme`.
-    - This is the closest equivalent to `include/block/nvme.h`
-    - A test-suite MAY define non-standard deviations or vendor-specific commands, identifiers and data-structures (such as from OCP) in the suite itself.
-
-## What a run looks like
-
-The same run, in motion. A run selects (architecture, batch) pairs and
-executes each pair in one VM session. For each batch, per architecture:
-
-1. The architecture's live disk is resumed from its base snapshot.
-2. An NVMe controller is hot-plugged with the batch's device parameters, backed
-   by a fresh raw disk under `.makac/vm-images/`.
-3. The controller is bound to `vfio-pci` in the guest.
-4. The batch's test binary, cross-compiled statically for the guest
-   architecture, is copied in and executed, reading the controller BDF from
-   `NVME_BDF`.
-5. The VM is shut down with a clean QMP quit.
-
-The slow base-image build happens once per architecture; every batch after
-that starts from the same resumed snapshot and a fresh copy of its raw disk.
-
-```
- HOST                                GUEST  (resumed at the baseline snapshot)
-
- QMP: loadvm                ----->   VM is live in seconds, no boot
-
- QMP: device_add            ----->   NVMe controller appears on the PCI bus,
- (batch's ctrl params +              backed by a fresh raw disk
-  fresh raw disk)
-
- ssh: bind script           ----->   controller leaves nvme.ko, opens via
-                                     /dev/vfio; its BDF becomes NVME_BDF
-
- zig build (static, guest arch)      (nothing on the guest yet)
-
- scp batch binary           ----->   /tmp/<batch>
-
- ssh: NVME_BDF run          ----->   zig test runner drives the controller
-                                     through libvfn: queues, doorbells,
-                                     CQEs, no kernel NVMe driver in between
-                            <-----   stdout, stderr, exit code
-
- QMP: quit                  ----->   clean shutdown; live-disk writes and the
-                                     raw NVMe disk are discarded
-```
-
-Note where the arrows cross: only QMP and SSH/scp bridge host and guest, and
-the test binary is the only thing that ever touches the device directly.
-
-## Why Zig
-
-Two reasons, in order of importance:
-
-1. **The toolchain and target list.** One `zig build` produces a static musl
-   binary for s390x from an amd64 host — the emulated s390x VM, where merely
-   resuming a snapshot takes ~25 seconds on a laptop, never compiles a thing.
-   No toolchain needs shipping into any guest.
-2. **Ergonomics that suit test code.** Allocators that detect leaks and
-   use-after-free, `defer`/`errdefer` for teardown — while staying legible
-   to a C programmer.
-
-## The amd64/s390x axis exists to catch bugs
-
-The matrix is not about breadth of coverage. NVMe structures are
-little-endian; running the identical test binary on a little-endian (amd64,
-KVM) and a big-endian (s390x, fully emulated) guest flushes out host-endian
-assumptions that would otherwise hide until someone ran the test on real
-big-endian hardware. This is why `spec.zig` holds all byte-order conversion:
-endian-correctness is localized, testable on the host, and identical across
-batches.
-
-The architectures differ in setup, not in what the tests see:
-
-- **amd64**: Q35 + KVM; pre-created PCIe root ports as NVMe hot-plug targets;
-  an emulated intel-iommu (no IOMMU group, no vfio-pci binding otherwise).
-- **s390x**: `s390-ccw-virtio`, fully emulated; zPCI allocates the function
-  and address itself; no IOMMU dance needed.
-
-## The batch is the isolation unit
-
-Every batch runs in a VM resumed fresh from the base snapshot, against a
-fresh per-batch raw disk. Resume is cheaper than boot but not free
-(s390x: ~25 s), so the batch granularity is a deliberate tradeoff — as a test
-writer you decide which tests share a session. Log-page inspections that
-cannot disturb each other belong in one batch; a test that might wedge the
-controller or scribble its disk does not. Corollary: a batch must neither
-depend on, nor worry about, state from any other batch.
+Tests run on amd64 (KVM) and s390x (fully emulated): little- and big-endian
+guests executing the same test binaries. NVMe structures are little-endian,
+so the point of the second architecture is flushing out host-endian
+assumptions — which is why all byte-order conversion is localized in
+`src/nvme/spec.zig`, host-testable and identical for every batch.
 
 ## State on disk
 
@@ -139,8 +55,6 @@ Everything generated is local and gitignored:
 | `.makac/qemu/img/` | Base image build state and `serial.log` |
 | `logs/` | Test run logs |
 
-The base-image snapshot is built once per architecture; every batch starts
-from that same resumed snapshot and a fresh copy of its raw disk. The live
-disks are large, disposable artifacts — keeping them under the
-already-gitignored `.makac/` means `rm -rf .makac` is a complete reset.
-
+Base images are built once per architecture. The live disks are large,
+disposable artifacts — keeping them under the already-gitignored `.makac/`
+means `rm -rf .makac` is a complete reset.

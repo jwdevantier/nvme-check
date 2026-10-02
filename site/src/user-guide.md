@@ -6,13 +6,11 @@
 under `tests/` containing a `workflow.lua`), applies your selection, and runs
 the selected batches.
 
-A workflow is a makac script with the makac.qemu actions at its disposal, so a
-suite can in principle drive several VMs and do arbitrary work around the test
-run. In practice a suite usually needs one thing: boot a VM with the NVMe
-device configured a particular way, run a test binary against it, shut the VM
-down. For that common case the workflow simply declares a `batches` table —
-one row per test program, with its device parameters and tags, as in
-[tests/tp4176/workflow.lua](https://github.com/jwdevantier/nvme-check/blob/main/tests/tp4176/workflow.lua).
+A workflow is a [makac](https://jwdevantier.github.io/makac) script with the
+[makac.qemu](https://jwdevantier.github.io/makac.qemu) actions at its disposal,
+so a suite can in principle drive several VMs and do arbitrary work around the
+test run. In practice tests mostly tend to do the same setup work.
+To that end, `nvme-check` provides several [test drivers](drivers.md).
 
 Before the first run, set the QEMU binaries in the
 [Configuration](configuration.md); there are no defaults, and the suites refuse
@@ -28,33 +26,34 @@ to run without them.
 ./nvme-check.lua tp4176 -a s390x
 
 # one batch
-./nvme-check.lua tp4176 -w aer
+./nvme-check.lua tp4176:aer
 
 # show what would run, without running it
 ./nvme-check.lua --list
 ```
 
-The first run per architecture is slow: it downloads a cloud image, boots it,
-and snapshots the result. Later runs resume the snapshot in seconds. To watch
-the initial build, set `MAKAC_IMG_VERBOSE=1` or follow the serial log:
-
-```sh
-tail -f .makac/qemu/img/<image>/serial.log
-```
-
-For what happens once a run starts, see
-[Architecture](architecture.md#what-a-run-looks-like).
+For what happens once a run starts — and why the first run per architecture
+is slow — see
+[the `libvfn-simple` driver](drivers/libvfn-simple.md#what-a-run-looks-like).
 
 ## Selecting tests
 
 Selection has two axes: the suites named on the command line, and the
 `--where` tag expression.
 
-### Suites
+### Suites and single tests
 
 The positional arguments name suites. `./nvme-check.lua tp4176` runs only that
 suite; with no positional arguments, every discovered suite is selected.
 An unknown name fails with the list of available suites.
+
+To run a single test, name it as `suite:test`: `./nvme-check.lua tp4176:aer`.
+The test name is applied as a name filter across the suites you selected
+(test names are implicit tags — the same mechanism `--where aer` uses), and
+it combines with the other flags: `-a s390x` further restricts the
+architecture, `-w` is and-ed with it. Since the test is named explicitly, a
+name that does not exist is an error listing the suite's tests, not an empty
+selection.
 
 ### Tags
 
@@ -105,32 +104,31 @@ makac run testlib/tests/tagexpr_test.lua
 ## Flags
 
 ```
-usage: nvme-check.lua [suite...] [-c file] [-a arch]... [-w expr] [-l]
+usage: nvme-check.lua [suite[:test]...] [-c file] [-a arch]... [-w expr] [-l]
 ```
 
 | Flag | Meaning |
 |---|---|
-| `suite` (positional) | Restrict to these suites (default: all of `tests/*`). |
+| `suite[:test]` (positional) | Restrict to these suites, or to one test within a suite (default: all of `tests/*`). |
 | `-c`, `--config file` | Which per-machine config file to use (see [Configuration](configuration.md)). |
 | `-a`, `--arch arch` | Only this architecture (`amd64`, `s390x`, …). Repeatable or comma-separated. |
 | `-w`, `--where expr` | Boolean tag expression, described above. |
 | `-l`, `--list` | List the selected (architecture, batch) pairs without running anything. |
 | `-h`, `--help` | Usage text. |
 
-## Running a suite directly
+## Running a suite
 
-Each suite's workflow is also runnable without the runner:
+Workflows are declarations loaded by the runner — there is no standalone
+`makac run tests/<suite>/workflow.lua`. Run a whole suite by naming it:
 
 ```sh
-makac run tests/tp4176/workflow.lua
+./nvme-check.lua tp4176
 ```
-
-That runs the whole suite. Listing and selection are the runner's job.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | Everything selected passed (or `--list` succeeded). |
-| 1 | A test failed, or a usage error (unknown suite, unknown flag, missing flag value). |
+| 1 | A test failed, or a usage error (unknown suite, unknown test, unknown flag, missing flag value). |
 | 2 | Malformed `--where` expression. |

@@ -68,9 +68,11 @@ zig cc -c src/probe.c -o /tmp/probe.o \
   -Izig-out/libvfn-src/ccan -Ivendor
 ```
 
-If deemed valuable, then `batch.run_all` could be extended to detect if the test
-program has the `.c` extension, and if so, compile programs as shown above.
-The cost would be maintaining data-structures in two languages, however.
+If deemed valuable, then the `nvmecheck:libvfn-simple` driver (or the
+`nvmecheck:build` action underneath it) could be extended to detect if the
+test program has the `.c` extension, and if so, compile programs as shown
+above. The cost would be maintaining data-structures in two languages,
+however.
 
 ## Building the book
 

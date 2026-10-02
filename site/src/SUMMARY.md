@@ -10,5 +10,8 @@
 - [User guide](user-guide.md)
 - [Architecture](architecture.md)
 - [Writing tests](writing-tests.md)
+- [Test drivers](drivers.md)
+  - [The `libvfn-simple` driver](drivers/libvfn-simple.md)
+  - [The `base` driver](drivers/base.md)
 - [Developer notes](developer-notes.md)
 - [References](references.md)

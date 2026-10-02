@@ -117,7 +117,7 @@ return function(health, pkg_name)
 	end
 
 	health.start("library")
-	for _, mod in ipairs({ "arch", "images", "guest", "nvme", "batch", "zigtest", "tagexpr", "config" }) do
+	for _, mod in ipairs({ "arch", "images", "guest", "nvme", "selection", "base", "libvfn_simple", "zigtest", "tagexpr", "config" }) do
 		local ok, err = pcall(require, pkg_name .. "/" .. mod)
 		if ok then
 			health.ok("require " .. pkg_name .. "/" .. mod)
