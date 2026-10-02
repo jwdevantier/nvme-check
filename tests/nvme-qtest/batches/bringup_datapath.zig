@@ -35,14 +35,15 @@ const DB0_CQ_HEAD: u64 = 0x1004;
 const DB1_SQ_TAIL: u64 = 0x1008;
 const DB1_CQ_HEAD: u64 = 0x100C;
 
-// guest-physical memory we simply choose (machine has RAM from 0; no allocator)
-const ASQ: u64 = 0x0010_0000; // admin SQ, 8 slots x 64 B
-const ACQ: u64 = 0x0010_1000; // admin CQ, 8 slots x 16 B
-const IOSQ: u64 = 0x0010_2000;
-const IOCQ: u64 = 0x0010_3000;
-const DBUF: u64 = 0x0010_4000; // admin data buffer (4 KiB)
-const WRBUF: u64 = 0x0010_5000; // write source (one LBA)
-const RDBUF: u64 = 0x0010_6000; // read destination
+// guest-physical addresses, bump-allocated per run (src/qtest/guestmem.zig);
+// assigned in the test body below
+var ASQ: u64 = undefined; // admin SQ, 8 slots x 64 B
+var ACQ: u64 = undefined; // admin CQ, 8 slots x 16 B
+var IOSQ: u64 = undefined;
+var IOCQ: u64 = undefined;
+var DBUF: u64 = undefined; // admin data buffer (4 KiB)
+var WRBUF: u64 = undefined; // write source (one LBA)
+var RDBUF: u64 = undefined; // read destination
 
 var g_cid: u16 = 0;
 var g_sq_tail: [2]u32 = .{ 0, 0 }; // [qid] -> tail (qid 0 = admin, 1 = io)
@@ -133,6 +134,15 @@ test "bring-up + datapath: enable, identify, io queues, write/read, flush" {
     }
     const drive = try backingImage(alloc, img_path);
     defer alloc.free(drive);
+
+    var gmem = common.qtest.GuestMem.init(); // -m 256M pc layout
+    ASQ = try gmem.alloc(4096, 4096);
+    ACQ = try gmem.alloc(4096, 4096);
+    IOSQ = try gmem.alloc(4096, 4096);
+    IOCQ = try gmem.alloc(4096, 4096);
+    DBUF = try gmem.alloc(4096, 4096);
+    WRBUF = try gmem.alloc(4096, 4096);
+    RDBUF = try gmem.alloc(4096, 4096);
 
     const s = try common.spawnDrive("", &.{}, drive);
     defer s.deinit();

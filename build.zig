@@ -334,6 +334,7 @@ pub fn build(b: *std.Build) void {
     const test_roots = [_][]const u8{
         "src/tests.zig",
         "src/nvme/nvme.zig",
+        "src/qtest/guestmem.zig",
         "tests/tp4176/spec.zig",
     };
     for (test_roots) |root| {

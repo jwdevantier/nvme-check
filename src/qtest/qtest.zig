@@ -15,6 +15,7 @@ const linux = std.os.linux;
 const errno = std.posix.errno;
 
 pub const pci = @import("pci.zig");
+pub const GuestMem = @import("guestmem.zig").GuestMem;
 
 // The live session, for the panic hook below. Single-threaded test binaries;
 // set by spawn, cleared by deinit.
