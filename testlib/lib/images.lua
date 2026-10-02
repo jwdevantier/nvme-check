@@ -43,19 +43,19 @@ end
 ---@param path string
 ---@return string
 local function instance_id(path)
-	local f = io.open(path)
-	if f then
-		local s = (f:read("a"):gsub("%s+$", ""))
-		f:close()
-		return s
-	end
-	local id = "nvme-" .. path:gsub("[^%w]", "-") .. "-" .. os.time()
-	local dir = path:match("^(.*)/[^/]*$")
-	if dir then makac.fs.mkdir_p(dir) end
-	local wf = assert(io.open(path, "w"))
-	wf:write(id .. "\n")
-	wf:close()
-	return id
+  local f = io.open(path)
+  if f then
+    local s = (f:read("a"):gsub("%s+$", ""))
+    f:close()
+    return s
+  end
+  local id = "nvme-" .. path:gsub("[^%w]", "-") .. "-" .. os.time()
+  local dir = path:match("^(.*)/[^/]*$")
+  if dir then makac.fs.mkdir_p(dir) end
+  local wf = assert(io.open(path, "w"))
+  wf:write(id .. "\n")
+  wf:close()
+  return id
 end
 
 -- raw(name, size, opts?) -> qemu:img spec for an empty disk.
@@ -65,13 +65,13 @@ end
 ---@param opts? { format?: string }
 ---@return ImgSpec
 function M.raw(name, size, opts)
-	opts = opts or {}
-	return {
-		name = name,
-		builder = "raw",
-		img_size = size or "1G",
-		format = opts.format,
-	}
+  opts = opts or {}
+  return {
+    name = name,
+    builder = "raw",
+    img_size = size or "1G",
+    format = opts.format,
+  }
 end
 
 -- cloud_init(arch) -> qemu:img spec. `arch` is the descriptor from arch.lua
@@ -81,32 +81,32 @@ end
 ---@param arch Arch
 ---@return ImgSpec
 function M.cloud_init(arch)
-	return {
-		name = arch.image_name,
-		builder = "cloud-init",
-		qemu_bin = arch.qemu_bin,
-		img_size = arch.img_size or "10G",
-		timeout_s = arch.img_timeout_s or 2400,
-		verbose = arch.img_verbose,
+  return {
+    name = arch.image_name,
+    builder = "cloud-init",
+    qemu_bin = arch.qemu_bin,
+    img_size = arch.img_size or "10G",
+    timeout_s = arch.img_timeout_s or 2400,
+    verbose = arch.img_verbose,
 
-		base_img = { url = arch.base_url, sha256 = arch.base_sha256 },
+    base_img = { url = arch.base_url, sha256 = arch.base_sha256 },
 
-		env = { hostname = arch.hostname },
+    env = { hostname = arch.hostname },
 
-		env_hook = function(env)
-			env.ssh_public_key = read_pubkey()
-			env.root_password_hash = M.ROOT_PASSWORD_HASH
-			env.instance_id = instance_id(arch.instance_id_file)
-			return env
-		end,
+    env_hook = function(env)
+      env.ssh_public_key = read_pubkey()
+      env.root_password_hash = M.ROOT_PASSWORD_HASH
+      env.instance_id = instance_id(arch.instance_id_file)
+      return env
+    end,
 
-		templates = {
-			{ template = "testlib/templates/user-data.tpl", output = "user-data" },
-			{ template = "testlib/templates/meta-data.tpl", output = "meta-data" },
-		},
+    templates = {
+      { template = "testlib/templates/user-data.tpl", output = "user-data" },
+      { template = "testlib/templates/meta-data.tpl", output = "meta-data" },
+    },
 
-		build_args = arch.build_args,
-	}
+    build_args = arch.build_args,
+  }
 end
 
 return M
