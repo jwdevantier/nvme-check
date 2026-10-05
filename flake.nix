@@ -38,8 +38,8 @@
 
             gdb
 
-            cdrkit  # genisoimage
-            qemu    # qemu-img
+            cdrkit        # genisoimage
+            qemu-utils    # qemu-img
           ]) ++ [
             makac.packages.${system}.makac
           ];
