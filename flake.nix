@@ -25,12 +25,10 @@
           });
     in
     {
-      devShells = forAllSystems ({ pkgs, system, ... }: {
-
-        default = pkgs.mkShell {
-          name = "nvme-check-dev";
-
-          packages = (with pkgs; [
+      devShells = forAllSystems ({ pkgs, system, ... }:
+        let
+          # build.zig fetches the pinned libvfn fork itself (build.zig.zon).
+          commonPackages = (with pkgs; [
             zig
 
             gcc
@@ -44,17 +42,25 @@
             makac.packages.${system}.makac
           ];
 
-          # build.zig fetches the pinned libvfn fork itself (build.zig.zon).
-          shellHook = ''
-            echo "Zig:     $(zig version)"
-            echo "makac:   $(makac --version)"
-          '';
-        };
+          mkDevShell = extraPackages: pkgs.mkShell {
+            name = "nvme-check-dev";
+            packages = commonPackages ++ extraPackages;
+            shellHook = ''
+              echo "Zig:     $(zig version)"
+              echo "makac:   $(makac --version)"
+            '';
+          };
+        in
+        {
+          default = mkDevShell [ ];
 
-        site = pkgs.mkShell {
-          name = "nvme-check-site";
-          packages = [ pkgs.mdbook ];
-        };
-      });
+          # Same environment as `default`, plus the Zig language server.
+          dev = mkDevShell [ pkgs.zls ];
+
+          site = pkgs.mkShell {
+            name = "nvme-check-site";
+            packages = [ pkgs.mdbook ];
+          };
+        });
     };
 }
