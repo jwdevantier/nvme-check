@@ -195,7 +195,7 @@ pub fn build(b: *std.Build) void {
     // Zig-facing infra modules (DESIGN.md §3): thin libvfn binding, shared
     // NVMe spec structures, test-support conveniences. Batch programs and host
     // unit tests import these as "vfn", "nvme", "vfntest".
-    const vfn_zig = b.createModule(.{
+    const vfn_zig = b.addModule("vfn", .{
         .root_source_file = b.path("src/vfn/vfn.zig"),
         .target = target,
         .optimize = optimize,
@@ -204,7 +204,7 @@ pub fn build(b: *std.Build) void {
     vfn_zig.addImport("vfn_c", vfn_c);
     vfn_zig.linkLibrary(vfn);
 
-    const nvme_zig = b.createModule(.{
+    const nvme_zig = b.addModule("nvme", .{
         .root_source_file = b.path("src/nvme/nvme.zig"),
         .target = target,
         .optimize = optimize,
@@ -215,14 +215,14 @@ pub fn build(b: *std.Build) void {
 
     // qtest-protocol client for host-side tests (no libvfn; talks to a
     // -accel qtest QEMU over a unix socket). Imported as "qtest".
-    const qtest_zig = b.createModule(.{
+    const qtest_zig = b.addModule("qtest", .{
         .root_source_file = b.path("src/qtest/qtest.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
 
-    const vfntest_zig = b.createModule(.{
+    const vfntest_zig = b.addModule("vfntest", .{
         .root_source_file = b.path("src/vfntest/vfntest.zig"),
         .target = target,
         .optimize = optimize,
@@ -337,6 +337,7 @@ pub fn build(b: *std.Build) void {
         "src/qtest/guestmem.zig",
         "src/qtest/qtest.zig",
         "tests/tp4176/spec.zig",
+        "tests/nvme14/spec.zig",
     };
     for (test_roots) |root| {
         const m = b.createModule(.{
@@ -349,4 +350,55 @@ pub fn build(b: *std.Build) void {
         const t = b.addTest(.{ .name = b.fmt("test-{s}", .{std.fs.path.stem(root)}), .root_module = m });
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
+
+    // Expose the per-suite module graph as *public* modules so that `zls` can
+    // resolve the named imports. A batch reaches `vfn`, `nvme`, `vfntest`,
+    // `qtest`, and its suite's `common` through `@import`; those modules only
+    // enter the build graph when a batch is built with `-Dprogram=...`. A plain
+    // `zig build` (which is what the language server inspects) therefore never
+    // sees them, and go-to-definition returns nothing. `addModule` registers
+    // them unconditionally, independent of any compile step.
+    if (b.build_root.handle.openDir(b.graph.io, "tests", .{ .iterate = true })) |tests_dir| {
+        var suites = tests_dir.iterate();
+        while (suites.next(b.graph.io) catch null) |suite| {
+            if (suite.kind != .directory) continue;
+
+            const common_rel = b.pathJoin(&.{ "tests", suite.name, "common.zig" });
+            const common_mod: ?*std.Build.Module = if (b.build_root.handle.access(b.graph.io, common_rel, .{})) |_| blk: {
+                const m = b.addModule(b.fmt("common_{s}", .{suite.name}), .{
+                    .root_source_file = b.path(common_rel),
+                    .target = target,
+                    .optimize = optimize,
+                    .link_libc = true,
+                });
+                m.addImport("vfn_c", vfn_c);
+                m.addImport("vfn", vfn_zig);
+                m.addImport("nvme", nvme_zig);
+                m.addImport("vfntest", vfntest_zig);
+                m.addImport("qtest", qtest_zig);
+                break :blk m;
+            } else |_| null;
+
+            const batches_rel = b.pathJoin(&.{ "tests", suite.name, "batches" });
+            const batches_dir = b.build_root.handle.openDir(b.graph.io, batches_rel, .{ .iterate = true }) catch continue;
+            var batches = batches_dir.iterate();
+            while (batches.next(b.graph.io) catch null) |batch| {
+                if (batch.kind != .file) continue;
+                if (!std.mem.endsWith(u8, batch.name, ".zig")) continue;
+
+                const m = b.addModule(b.fmt("batch_{s}_{s}", .{ suite.name, std.fs.path.stem(batch.name) }), .{
+                    .root_source_file = b.path(b.pathJoin(&.{ batches_rel, batch.name })),
+                    .target = target,
+                    .optimize = optimize,
+                    .link_libc = true,
+                });
+                m.addImport("vfn_c", vfn_c);
+                m.addImport("vfn", vfn_zig);
+                m.addImport("nvme", nvme_zig);
+                m.addImport("vfntest", vfntest_zig);
+                m.addImport("qtest", qtest_zig);
+                if (common_mod) |cm| m.addImport("common", cm);
+            }
+        }
+    } else |_| {}
 }

@@ -30,6 +30,7 @@
           # build.zig fetches the pinned libvfn fork itself (build.zig.zon).
           commonPackages = (with pkgs; [
             zig
+            zls           # Zig language server: editor go-to-definition/hover
 
             gcc
             gnumake
@@ -54,8 +55,9 @@
         {
           default = mkDevShell [ ];
 
-          # Same environment as `default`, plus the Zig language server.
-          dev = mkDevShell [ pkgs.zls ];
+          # Kept as an alias of `default`. `zls` now lives in `commonPackages`
+          # so the language server is present in whichever shell you use.
+          dev = mkDevShell [ ];
 
           site = pkgs.mkShell {
             name = "nvme-check-site";
