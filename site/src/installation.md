@@ -19,11 +19,23 @@ which is best-effort. Both then need the `makac.qemu` package.
 
 ## With Nix
 
-The default dev shell provides Zig, a QEMU build (for `qemu-img`), `genisoimage` and `makac`:
+The default dev shell provides:
+
+* The Zig toolchain
+  * used to compile libvfn test programs
+* the Zig language server,
+* qemu-utils
+  * provides `qemu-img`, needed to create VM images
+* `genisoimage`
+  * cloud-init builders compose a ISO for VM customization
+* `makac`
+  * The orchestrator
 
 ```sh
 nix develop
 ```
+
+Start your editor from inside this shell so it has access to `zls`.
 
 Finally, proceed to [fetch the makac packages](#fetch-the-packages).
 

@@ -55,10 +55,6 @@
         {
           default = mkDevShell [ ];
 
-          # Kept as an alias of `default`. `zls` now lives in `commonPackages`
-          # so the language server is present in whichever shell you use.
-          dev = mkDevShell [ ];
-
           site = pkgs.mkShell {
             name = "nvme-check-site";
             packages = [ pkgs.mdbook ];
