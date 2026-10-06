@@ -338,7 +338,7 @@ pub fn build(b: *std.Build) void {
         "src/qtest/guestmem.zig",
         "src/qtest/qtest.zig",
         "tests/tp4176/spec.zig",
-        "tests/nvme14/spec.zig",
+        "tests/nvme14m/spec.zig",
     };
     for (test_roots) |root| {
         const m = b.createModule(.{
