@@ -78,7 +78,7 @@ fn submit(s: *common.qtest.Session, qid: usize, cmd: [64]u8) !void {
     const base: u64 = if (qid == 0) ASQ else IOSQ;
     try s.memWrite(base + @as(u64, g_sq_tail[qid]) * 64, cmd[0..]);
     g_sq_tail[qid] += 1;
-    try s.writel(common.BAR0 + sqTailDb(qid), g_sq_tail[qid]);
+    try s.write(u32, common.BAR0 + sqTailDb(qid), g_sq_tail[qid]);
 }
 
 const Cqe = struct { cid: u16, sc: u8, sct: u3, dw0: u32 };
@@ -98,7 +98,7 @@ fn pollCqe(s: *common.qtest.Session, qid: usize) !Cqe {
         const sf = std.mem.readInt(u16, cqe[14..16], .little);
         if (sf & 1 == 1) {
             g_cq_head[qid] += 1;
-            try s.writel(common.BAR0 + cqHeadDb(qid), g_cq_head[qid]);
+            try s.write(u32, common.BAR0 + cqHeadDb(qid), g_cq_head[qid]);
             return .{
                 .cid = cid,
                 .dw0 = dw0,
@@ -137,7 +137,12 @@ test "bring-up + datapath: enable, identify, io queues, write/read, flush" {
     const drive = try backingImage(alloc, img_path);
     defer alloc.free(drive);
 
-    var gmem = common.qtest.GuestMem.init(); // -m 256M pc layout
+    const s = try common.spawnDrive("", &.{}, drive);
+    defer s.deinit();
+
+    // Guest memory comes from the session, initialized from the machine row
+    // the driver selected (NVME_QTEST_MACHINE) — not assumed here.
+    const gmem = s.guestMem();
     ASQ = try gmem.alloc(4096, 4096);
     ACQ = try gmem.alloc(4096, 4096);
     IOSQ = try gmem.alloc(4096, 4096);
@@ -146,30 +151,28 @@ test "bring-up + datapath: enable, identify, io queues, write/read, flush" {
     WRBUF = try gmem.alloc(4096, 4096);
     RDBUF = try gmem.alloc(4096, 4096);
 
-    const s = try common.spawnDrive("", &.{}, drive);
-    defer s.deinit();
     const bar = common.BAR0;
 
     try common.pci.assignBar64(s, common.devfn, 0, bar);
     try common.pci.enable(s, common.devfn);
 
     // -- bring-up: CC.EN must be 0; program admin queues; enable; poll RDY --
-    try std.testing.expectEqual(@as(u32, 0), try s.readl(bar + REG_CC));
+    try std.testing.expectEqual(@as(u32, 0), try s.read(u32, bar + REG_CC));
     try s.memset(ASQ, 4096, 0);
     try s.memset(ACQ, 4096, 0);
-    try s.writel(bar + REG_AQA, (7 << 16) | 7); // acqs=8, asqs=8 (0-based)
-    try s.writeq(bar + REG_ASQ, ASQ);
-    try s.writeq(bar + REG_ACQ, ACQ);
-    try s.writel(bar + REG_CC, 0x460001); // EN | IOSQES=6 | IOCQES=4, MPS=0
+    try s.write(u32, bar + REG_AQA, (7 << 16) | 7); // acqs=8, asqs=8 (0-based)
+    try s.write(u64, bar + REG_ASQ, ASQ);
+    try s.write(u64, bar + REG_ACQ, ACQ);
+    try s.write(u32, bar + REG_CC, 0x460001); // EN | IOSQES=6 | IOCQES=4, MPS=0
 
     var ready = false;
     var tries: usize = 0;
     while (tries < 100 and !ready) : (tries += 1) {
-        ready = (try s.readl(bar + REG_CSTS)) & 1 == 1;
+        ready = (try s.read(u32, bar + REG_CSTS)) & 1 == 1;
         if (!ready) try s.clockStep(1_000_000);
     }
     try std.testing.expect(ready);
-    const vs = try s.readl(bar + REG_VS);
+    const vs = try s.read(u32, bar + REG_VS);
     std.debug.print("controller READY, VS {d}.{d}.{d}\n", .{ vs >> 16, (vs >> 8) & 0xff, vs & 0xff });
 
     // -- Identify controller (CNS=1): command in guest RAM, ring doorbell --

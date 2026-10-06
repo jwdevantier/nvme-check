@@ -51,6 +51,8 @@ the driver wants reported (exit code, stdout, ...).
 - [The `libvfn-simple` driver](drivers/libvfn-simple.md) — one VM, one test
   binary, exit code: boot the baseline, wire the declared NVMe devices, build
   + ship + run.
+- [The `qtest` driver](drivers/qtest.md) — a host-native program spawning
+  `-accel qtest` QEMU and driving it over the qtest protocol; no VM.
 - [The `base` driver](drivers/base.md) — free reign: the harness supplies
   nothing, the test's `run` function does everything (multi-VM, VM-less,
   experiments).

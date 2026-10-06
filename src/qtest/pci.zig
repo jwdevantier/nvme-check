@@ -1,6 +1,10 @@
-//! x86 PCI config-space access for qtest-lane tests: ioports 0xCF8/0xCFC
-//! (what libqos/pci-pc.c does). No BIOS runs under -accel qtest, so tests
-//! must program BARs and the command register themselves.
+//! PCI config-space access for qtest-lane tests. The access mechanism comes
+//! from the session's machine row (`row.pci_config`); today that is only x86
+//! ioports 0xCF8/0xCFC (what libqos/pci-pc.c does). No BIOS runs under
+//! -accel qtest, so tests program BARs and the command register themselves.
+//!
+//! Adding a machine with a different mechanism (ECAM/RTAS/...) means a new
+//! `machines.Row.pci_config` variant plus an arm in the switches below.
 //!
 //! Scope: bus 0, 32/64-bit BARs in the low 4 GiB PCI hole. Anything needing
 //! bridges, bridges' windows or above-4G mapping does not belong here yet.
@@ -25,13 +29,21 @@ pub const ConfigAddr = struct {
 };
 
 pub fn configRead32(s: *qtest.Session, a: ConfigAddr, off: u8) qtest.Error!u32 {
-    try s.outl(CF8, a.dword(off));
-    return s.inl(CFC);
+    switch (s.row.pci_config) {
+        .x86_ioports => {
+            try s.out32(CF8, a.dword(off));
+            return s.in32(CFC);
+        },
+    }
 }
 
 pub fn configWrite32(s: *qtest.Session, a: ConfigAddr, off: u8, val: u32) qtest.Error!void {
-    try s.outl(CF8, a.dword(off));
-    try s.outl(CFC, val);
+    switch (s.row.pci_config) {
+        .x86_ioports => {
+            try s.out32(CF8, a.dword(off));
+            try s.out32(CFC, val);
+        },
+    }
 }
 
 pub fn configRead16(s: *qtest.Session, a: ConfigAddr, off: u8) qtest.Error!u16 {

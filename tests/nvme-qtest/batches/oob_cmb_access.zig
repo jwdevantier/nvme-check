@@ -22,14 +22,14 @@ test "oob-cmb-access: CMB read-back widths and boundary behavior" {
     try common.pci.assignBar64(s, common.devfn, 2, common.BAR2); // then qpci_iomap(2)
 
     const cmb = common.BAR2;
-    try s.writel(cmb + 0, 0xccbbaa99);
-    try std.testing.expectEqual(@as(u8, 0x99), try s.readb(cmb + 0));
-    try std.testing.expectEqual(@as(u16, 0xaa99), try s.readw(cmb + 0));
+    try s.write(u32, cmb + 0, 0xccbbaa99);
+    try std.testing.expectEqual(@as(u8, 0x99), try s.read(u8, cmb + 0));
+    try std.testing.expectEqual(@as(u16, 0xaa99), try s.read(u16, cmb + 0));
 
     // partially out-of-bounds: write straddling the window's last byte
     const last = cmb + CMB_SIZE - 1;
-    try s.writel(last, 0x44332211);
-    try std.testing.expectEqual(@as(u8, 0x11), try s.readb(last));
-    try std.testing.expect((try s.readw(last)) != 0x2211);
-    try std.testing.expect((try s.readl(last)) != 0x44332211);
+    try s.write(u32, last, 0x44332211);
+    try std.testing.expectEqual(@as(u8, 0x11), try s.read(u8, last));
+    try std.testing.expect((try s.read(u16, last)) != 0x2211);
+    try std.testing.expect((try s.read(u32, last)) != 0x44332211);
 }

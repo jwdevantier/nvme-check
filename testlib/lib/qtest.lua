@@ -9,6 +9,10 @@
 -- `arch` names the *emulated target* (suites declare archs = { "amd64" } and
 -- get qemu.amd64.bin).
 --
+-- The client side of this contract is `qtest.launch` (src/qtest/qtest.zig):
+-- it requires both env vars, resolves NVME_QTEST_MACHINE to a machines.Row,
+-- and builds the base machine argv. An unset variable is an error.
+--
 -- with = {
 --   program = "batches/x.zig",   -- relative to tests/<suite>/
 --   arch/suite/name = <injected by the runner>,

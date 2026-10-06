@@ -2,8 +2,10 @@
 //! QEMU (-accel qtest, machine pc) with an NVMe controller at PCI 04.0, and
 //! hand the test a connected protocol session.
 //!
-//! The QEMU binary comes from the NVME_QTEST_QEMU env var, which the
-//! nvmecheck:qtest driver sets from the configured qemu.<arch>.bin.
+//! The QEMU binary and machine come from the driver's environment
+//! (NVME_QTEST_QEMU from the configured qemu.<arch>.bin, NVME_QTEST_MACHINE);
+//! qtest.launch() reads them and builds the machine base argv. This suite
+//! adds only the NVMe device-side args.
 //!
 //! No guest-memory constants are needed (these tests touch only MMIO); the
 //! BAR bases below are addresses WE choose inside the low PCI hole — no
@@ -12,7 +14,6 @@
 const std = @import("std");
 
 pub const qtest = @import("qtest");
-pub const machines = qtest.machines;
 pub const pci = qtest.pci;
 
 /// The device the argv below places at addr=04.0 (bus 0, dev 4, fn 0).
@@ -36,28 +37,21 @@ pub fn spawn(device_opts: []const u8, qemu_args: []const []const u8) !*qtest.Ses
 /// when a test needs a real backing file (datapath verification).
 pub fn spawnDrive(device_opts: []const u8, qemu_args: []const []const u8, drive: ?[]const u8) !*qtest.Session {
     const alloc = std.heap.smp_allocator;
-    const qemu = std.c.getenv("NVME_QTEST_QEMU") orelse
-        return error.QemuBinUnset; // set by the nvmecheck:qtest driver
-    const mach_env = std.c.getenv("NVME_QTEST_MACHINE"); // driver: arch row
-    const row = machines.byName(std.mem.span(mach_env orelse "pc")) orelse
-        return error.UnknownMachine;
 
     const device = try std.fmt.allocPrint(alloc, "nvme,addr=04.0,drive=drv0,serial=foo{s}", .{device_opts});
     defer alloc.free(device);
 
+    // launch() supplies the machine base argv from the driver's environment;
+    // this suite supplies the device-side tail. Order matters: -drive before
+    // the -device that references it, and -object (in qemu_args, e.g. PMR's
+    // memory-backend) before that -device too.
     var args: std.ArrayList([]const u8) = .empty;
     defer args.deinit(alloc);
     try args.appendSlice(alloc, &.{
-        "-machine", row.machine,
-        "-accel",     "qtest",
-        "-qtest-log", "/dev/null", // silence the protocol transcript on stderr
-        "-m",       "256M",
-        "-display", "none",
-        "-nodefaults",
-        "-drive",   drive orelse "id=drv0,if=none,file=null-co://,file.read-zeroes=on,format=raw",
+        "-drive", drive orelse "id=drv0,if=none,file=null-co://,file.read-zeroes=on,format=raw",
     });
     try args.appendSlice(alloc, qemu_args);
     try args.appendSlice(alloc, &.{ "-device", device });
 
-    return qtest.Session.spawn(alloc, std.mem.span(qemu), args.items);
+    return qtest.launch(alloc, args.items);
 }

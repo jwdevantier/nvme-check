@@ -10,14 +10,16 @@ A suite describes one or more tests to run and defines the **driver** suited
 to run them (set on the suite, overridable per test). A driver is a [makac
 action](https://jwdevantier.github.io/makac/concepts/actions.html): it
 receives the test's data and does the work required to actually run the test.
-Two drivers ship with nvme-check:
+Three drivers ship with nvme-check:
 
 - [`base`](drivers/base.md), where you define the function that runs the
   test;
 - [`libvfn-simple`](drivers/libvfn-simple.md), which boots an
   architecture-appropriate VM, hot-plugs the declared NVMe device(s),
   compiles the program described by the test, copies it in over SCP and runs
-  it.
+  it;
+- [`qtest`](drivers/qtest.md), which runs a host-native program that spawns
+  QEMU with `-accel qtest` and drives it over the qtest protocol.
 
 The `nvme-check.lua` script itself auto-discovers test suites and can
 enumerate or run tests — and provides a PyTest-inspired [tag filtering
@@ -32,6 +34,7 @@ on how they are tagged.
 | `tests/<suite>/workflow.lua` | Describes the tests to run; each test may individually specify the driver to use (`uses`) and provides the test data (`with`) to the driver |
 | `testlib/lib/selection.lua` | The filtering; turns the collected tests plus the query arguments into the list of (architecture, test) pairs to execute or list |
 | `testlib/lib/libvfn_simple.lua` | The `libvfn-simple` driver; boots the architecture's VM from its snapshot, hot-plugs and binds the declared NVMe devices, builds the test, copies it in, runs it — the exit code is the verdict |
+| `testlib/lib/qtest.lua` + `src/qtest` | The `qtest` driver and its protocol client; runs a host-native test against a `-accel qtest` QEMU over the qtest protocol |
 | `testlib/lib/base.lua` | The `base` driver; calls the test's `run` function — a raise is a FAIL, anything else a PASS |
 | `testlib/lib/arch.lua`, `guest.lua`, `nvme.lua`, `images.lua` | The VM machinery; architecture definitions, base-image builds, `guest.boot`, QMP device hot-plug and vfio-bind |
 | `build.zig` + `src/` | The build setup and shared test library; compiles each test program statically for the guest architecture.<br><br>• `src/vfn` binds the libvfn C API (conveniences belong in `src/vfntest`);<br>• `src/nvme` defines the NVMe spec structures and constants — the closest equivalent to QEMU's `include/block/nvme.h`.<br><br>Suites keep vendor-specific deviations and definitions internally |

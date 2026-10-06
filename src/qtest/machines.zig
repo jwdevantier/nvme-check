@@ -9,7 +9,11 @@
 pub const Row = struct {
     /// the -machine value
     machine: []const u8,
-    /// default RAM window (-m 256M): GuestMem bumps within this
+    /// the -m/-memory value handed to QEMU; QEMU's own size syntax (a bare
+    /// number there means MiB), so keep the suffix on byte counts
+    memory: []const u8,
+    /// guest-physical window GuestMem bumps within; must lie inside the RAM
+    /// described by `memory`
     ram_base: u64,
     ram_top: u64,
     /// how config space is reached on the guest bus
@@ -18,8 +22,9 @@ pub const Row = struct {
 
 pub const pc: Row = .{
     .machine = "pc",
+    .memory = "256M",
     .ram_base = 0x0010_0000, // skip low RAM by convention
-    .ram_top = 0x1000_0000,
+    .ram_top = 0x1000_0000, // == 256M; pc maps its -m RAM from 0
     .pci_config = .x86_ioports,
 };
 

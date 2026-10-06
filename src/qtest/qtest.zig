@@ -8,6 +8,10 @@
 //! + qmp_capabilities handshake; events counted and skipped).
 //!
 //! recv timeouts are fail-closed (a hang is a FAIL, not a stuck runner).
+//!
+//! `launch()` is the normal entry point: it reads the driver's environment
+//! contract (required NVME_QTEST_QEMU / NVME_QTEST_MACHINE), builds the base
+//! machine argv from the resolved row, and delegates to `Session.spawn()`.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -40,6 +44,9 @@ pub const Error = error{
     OutOfMemory,
     SpawnFailed,
     ProcessError,
+    QemuBinUnset, // NVME_QTEST_QEMU missing (the driver sets it)
+    MachineUnset, // NVME_QTEST_MACHINE missing (the driver sets it)
+    UnknownMachine, // NVME_QTEST_MACHINE names no machines.Row
 };
 
 fn deleteSockFile(path: []const u8) void {
@@ -139,6 +146,73 @@ test "parseIrqLine" {
     try std.testing.expect(parseIrqLine("IRQ raise 99999") == null);
 }
 
+// --- driver environment + base argv ----------------------------------------
+
+/// What the `nvmecheck:qtest` driver promises on the environment: the QEMU
+/// binary for the selected arch, and the machine row selected for it.
+pub const Env = struct {
+    qemu_bin: []const u8,
+    row: machines.Row,
+};
+
+/// Read the driver's environment contract. Both variables are required —
+/// the driver always sets them (testlib/lib/qtest.lua); guessing a machine
+/// here would only paper over a misconfigured run.
+pub fn resolveEnv() Error!Env {
+    const qemu = std.c.getenv("NVME_QTEST_QEMU") orelse return error.QemuBinUnset;
+    const mach = std.c.getenv("NVME_QTEST_MACHINE") orelse return error.MachineUnset;
+    const row = machines.byName(std.mem.span(mach)) orelse return error.UnknownMachine;
+    return .{ .qemu_bin = std.mem.span(qemu), .row = row };
+}
+
+/// The machine-level QEMU argv a row implies under the qtest lane: which
+/// machine, qtest acceleration, silencing the protocol transcript, its RAM
+/// size, and a headless host (no display, no default devices). Device and
+/// drive args are the suite's business and are appended by the caller.
+///
+/// Returns an owned, growable list the caller extends and then deinits —
+/// deliberately not a fixed-size array, so a different machine type can
+/// append (or omit) flags without changing this signature.
+pub fn baseArgs(allocator: std.mem.Allocator, row: machines.Row) Error!std.ArrayList([]const u8) {
+    var args: std.ArrayList([]const u8) = .empty;
+    errdefer args.deinit(allocator);
+    try args.appendSlice(allocator, &.{
+        "-machine",   row.machine,
+        "-accel",     "qtest",
+        "-qtest-log", "/dev/null",
+        "-m",         row.memory,
+        "-display",   "none",
+        "-nodefaults",
+    });
+    // future machine types append their differences here (or a row carries
+    // its own extras), without touching the return type.
+    return args;
+}
+
+/// Spawn a qtest QEMU the way the driver intends: resolve the environment,
+/// start from the row's base argv, and hand the result to `Session.spawn`.
+/// `extra_args` are the remaining argv words (`-drive`, `-object`,
+/// `-device`, ...). This is the normal entry point; `Session.spawn` is the
+/// lower-level primitive for callers that build their own argv.
+pub fn launch(allocator: std.mem.Allocator, extra_args: []const []const u8) Error!*Session {
+    const env = try resolveEnv();
+    var argv = try baseArgs(allocator, env.row);
+    defer argv.deinit(allocator);
+    try argv.appendSlice(allocator, extra_args);
+    return Session.spawn(allocator, env.qemu_bin, env.row, argv.items);
+}
+
+test "baseArgs: pc row" {
+    const alloc = std.testing.allocator;
+    var b = try baseArgs(alloc, machines.pc);
+    defer b.deinit(alloc);
+    try std.testing.expectEqualStrings("-machine", b.items[0]);
+    try std.testing.expectEqualStrings(machines.pc.machine, b.items[1]);
+    try std.testing.expectEqualStrings("-m", b.items[6]);
+    try std.testing.expectEqualStrings(machines.pc.memory, b.items[7]);
+    try std.testing.expectEqualStrings("-nodefaults", b.items[10]);
+}
+
 pub const Session = struct {
     allocator: std.mem.Allocator,
     io_threaded: std.Io.Threaded,
@@ -154,15 +228,22 @@ pub const Session = struct {
     irq_seen: [MAX_IRQ]bool = @splat(false),
     irq_level: [MAX_IRQ]bool = @splat(false),
     event_count: u64 = 0, // QMP events skipped as responses so far
+    row: machines.Row, // the machine this session targets (from launch())
+    gmem: GuestMem, // guest-physical bump allocator, initialized from `row`
 
-    /// Spawn `qemu_bin` with `-qtest unix:<sock>` plus a QMP monitor
-    /// (`-chardev socket -mon ...,mode=control`) plus the given extra args,
-    /// with QEMU connecting out to two sockets we pre-bind. Caller owns;
-    /// call deinit().
-    pub fn spawn(allocator: std.mem.Allocator, qemu_bin: []const u8, extra_args: []const []const u8) Error!*Session {
+    /// Low-level: spawn `qemu_bin` with `-qtest unix:<sock>` plus a QMP
+    /// monitor (`-chardev socket -mon ...,mode=control`) plus the given
+    /// extra args, with QEMU connecting out to two sockets we pre-bind.
+    /// `row` is stored on the session and initializes its guest-memory
+    /// window. Caller owns; call deinit(). Most tests want `launch()`
+    /// instead, which resolves the driver environment and prepends the
+    /// row's base args.
+    pub fn spawn(allocator: std.mem.Allocator, qemu_bin: []const u8, row: machines.Row, extra_args: []const []const u8) Error!*Session {
         const s = try allocator.create(Session);
         errdefer allocator.destroy(s);
         s.allocator = allocator;
+        s.row = row;
+        s.gmem = GuestMem.initFor(row);
 
         const pid = linux.getpid();
         s.sock_path = try std.fmt.allocPrint(allocator, "/tmp/nvme-qtest-{d}.sock", .{pid});
@@ -205,8 +286,12 @@ pub const Session = struct {
         s.rlen = 0;
         s.qlen = 0;
 
-        // handshake 1: this client is x86-only today (PCI config via
-        // ioports); refuse a big-endian target rather than corrupt silently.
+        // handshake 1: refuse a big-endian target. Two reasons, both
+        // separate from byte order as such: today's only implemented PCI
+        // config mechanism (x86 ioports, pci.zig) does not exist on the BE
+        // targets (ppc64/s390x), and the tests compare read()/write()
+        // values against little-endian-defined device registers, while qtest
+        // returns them in target order. Revisit when a non-x86 row lands.
         const endian = try s.cmd("endianness");
         if (!std.mem.eql(u8, endian, "little")) return error.NotLittleEndian;
 
@@ -234,6 +319,13 @@ pub const Session = struct {
         s.allocator.free(s.sock_path);
         s.allocator.free(s.qmp_path);
         s.allocator.destroy(s);
+    }
+
+    /// The session's guest-memory allocator, initialized from its machine
+    /// row. Prefer this over building a `GuestMem` yourself: the window must
+    /// match the machine the session actually spawned.
+    pub fn guestMem(s: *Session) *GuestMem {
+        return &s.gmem;
     }
 
     // --- qtest protocol ----------------------------------------------------
@@ -289,45 +381,38 @@ pub const Session = struct {
 
     // --- bus ops -----------------------------------------------------------
 
-    pub fn inl(s: *Session, port: u16) Error!u32 {
+    /// x86 I/O-port read (32-bit); qtest wire command `inl`.
+    pub fn in32(s: *Session, port: u16) Error!u32 {
         return @intCast(try numRsp(try s.cmd(try fmt("inl 0x{x}", .{port}))));
     }
 
-    pub fn outl(s: *Session, port: u16, val: u32) Error!void {
+    /// x86 I/O-port write (32-bit); qtest wire command `outl`.
+    pub fn out32(s: *Session, port: u16, val: u32) Error!void {
         _ = try s.cmd(try fmt("outl 0x{x} 0x{x}", .{ port, val }));
     }
 
-    pub fn readb(s: *Session, a: u64) Error!u8 {
-        return @intCast(try s.readN("readb", a));
-    }
-    pub fn readw(s: *Session, a: u64) Error!u16 {
-        return @intCast(try s.readN("readw", a));
-    }
-    pub fn readl(s: *Session, a: u64) Error!u32 {
-        return @intCast(try s.readN("readl", a));
-    }
-    pub fn readq(s: *Session, a: u64) Error!u64 {
-        return s.readN("readq", a);
-    }
-
-    fn readN(s: *Session, comptime op: []const u8, a: u64) Error!u64 {
-        return numRsp(try s.cmd(try fmt(op ++ " 0x{x}", .{a})));
+    /// Read one value of type `T` (u8/u16/u32/u64) at guest-physical address
+    /// `a`. The type *is* the width; the wire command is readb/readw/readl/readq.
+    pub fn read(s: *Session, comptime T: type, a: u64) Error!T {
+        const op = switch (T) {
+            u8 => "readb",
+            u16 => "readw",
+            u32 => "readl",
+            u64 => "readq",
+            else => @compileError("qtest read: T must be u8, u16, u32 or u64"),
+        };
+        return @intCast(try numRsp(try s.cmd(try fmt(op ++ " 0x{x}", .{a}))));
     }
 
-    pub fn writeb(s: *Session, a: u64, v: u8) Error!void {
-        return s.writeN("writeb", a, v);
-    }
-    pub fn writew(s: *Session, a: u64, v: u16) Error!void {
-        return s.writeN("writew", a, v);
-    }
-    pub fn writel(s: *Session, a: u64, v: u32) Error!void {
-        return s.writeN("writel", a, v);
-    }
-    pub fn writeq(s: *Session, a: u64, v: u64) Error!void {
-        return s.writeN("writeq", a, v);
-    }
-
-    fn writeN(s: *Session, comptime op: []const u8, a: u64, v: u64) Error!void {
+    /// Write `v` of type `T` (u8/u16/u32/u64) at guest-physical address `a`.
+    pub fn write(s: *Session, comptime T: type, a: u64, v: T) Error!void {
+        const op = switch (T) {
+            u8 => "writeb",
+            u16 => "writew",
+            u32 => "writel",
+            u64 => "writeq",
+            else => @compileError("qtest write: T must be u8, u16, u32 or u64"),
+        };
         _ = try s.cmd(try fmt(op ++ " 0x{x} 0x{x}", .{ a, v }));
     }
 
@@ -343,50 +428,50 @@ pub const Session = struct {
 
     /// write <addr> <size> 0x<hex> — bulk guest-memory write (hex on the
     /// wire, 2x size; fine for command/queue buffers).
-    pub fn memWrite(s: *Session, addr: u64, bytes: []const u8) Error!void {
-        const hex = s.allocator.alloc(u8, bytes.len * 2) catch return error.OutOfMemory;
+    pub fn memWrite(s: *Session, addr: u64, source: []const u8) Error!void {
+        const hex = s.allocator.alloc(u8, source.len * 2) catch return error.OutOfMemory;
         defer s.allocator.free(hex);
         const digits = "0123456789abcdef";
-        for (bytes, 0..) |byte, i| {
+        for (source, 0..) |byte, i| {
             hex[i * 2] = digits[byte >> 4];
             hex[i * 2 + 1] = digits[byte & 0xf];
         }
         const c = s.allocator.alloc(u8, 64 + hex.len) catch return error.OutOfMemory;
         defer s.allocator.free(c);
-        const line = std.fmt.bufPrint(c, "write 0x{x} 0x{x} 0x{s}", .{ addr, bytes.len, hex }) catch return error.Protocol;
+        const line = std.fmt.bufPrint(c, "write 0x{x} 0x{x} 0x{s}", .{ addr, source.len, hex }) catch return error.Protocol;
         _ = try s.cmd(line);
     }
 
-    /// read <addr> <size> -> 0x<hex>. Fills `out` (out.len bytes).
-    pub fn memRead(s: *Session, addr: u64, out: []u8) Error!void {
-        const rsp = try s.cmd(try fmt("read 0x{x} 0x{x}", .{ addr, out.len }));
-        if (rsp.len < 2 + out.len * 2 or !std.mem.startsWith(u8, rsp, "0x")) return error.Protocol;
+    /// read <addr> <size> -> 0x<hex>. Fills `dest` (dest.len bytes).
+    pub fn memRead(s: *Session, addr: u64, dest: []u8) Error!void {
+        const rsp = try s.cmd(try fmt("read 0x{x} 0x{x}", .{ addr, dest.len }));
+        if (rsp.len < 2 + dest.len * 2 or !std.mem.startsWith(u8, rsp, "0x")) return error.Protocol;
         var i: usize = 0;
-        while (i < out.len) : (i += 1) {
-            out[i] = std.fmt.parseInt(u8, rsp[2 + i * 2 ..][0..2], 16) catch return error.Protocol;
+        while (i < dest.len) : (i += 1) {
+            dest[i] = std.fmt.parseInt(u8, rsp[2 + i * 2 ..][0..2], 16) catch return error.Protocol;
         }
     }
 
     /// b64write <addr> <size> <base64> — like memWrite but ~4/3 wire size
     /// instead of 2x; matters once patterns get large.
-    pub fn memWriteB64(s: *Session, addr: u64, bytes: []const u8) Error!void {
+    pub fn memWriteB64(s: *Session, addr: u64, source: []const u8) Error!void {
         const enc = std.base64.standard.Encoder;
-        const b64 = s.allocator.alloc(u8, enc.calcSize(bytes.len)) catch return error.OutOfMemory;
+        const b64 = s.allocator.alloc(u8, enc.calcSize(source.len)) catch return error.OutOfMemory;
         defer s.allocator.free(b64);
-        _ = enc.encode(b64, bytes);
+        _ = enc.encode(b64, source);
         const c = s.allocator.alloc(u8, 64 + b64.len) catch return error.OutOfMemory;
         defer s.allocator.free(c);
-        const line = std.fmt.bufPrint(c, "b64write 0x{x} 0x{x} {s}", .{ addr, bytes.len, b64 }) catch return error.Protocol;
+        const line = std.fmt.bufPrint(c, "b64write 0x{x} 0x{x} {s}", .{ addr, source.len, b64 }) catch return error.Protocol;
         _ = try s.cmd(line);
     }
 
-    /// b64read <addr> <size> -> OK <base64>. Fills `out`.
-    pub fn memReadB64(s: *Session, addr: u64, out: []u8) Error!void {
-        const rsp = try s.cmd(try fmt("b64read 0x{x} 0x{x}", .{ addr, out.len }));
+    /// b64read <addr> <size> -> OK <base64>. Fills `dest`.
+    pub fn memReadB64(s: *Session, addr: u64, dest: []u8) Error!void {
+        const rsp = try s.cmd(try fmt("b64read 0x{x} 0x{x}", .{ addr, dest.len }));
         const dec = std.base64.standard.Decoder;
         const want = dec.calcSizeForSlice(rsp) catch return error.Protocol;
-        if (want != out.len) return error.Protocol;
-        dec.decode(out, rsp) catch return error.Protocol;
+        if (want != dest.len) return error.Protocol;
+        dec.decode(dest, rsp) catch return error.Protocol;
     }
 
     // --- QMP monitor -------------------------------------------------------

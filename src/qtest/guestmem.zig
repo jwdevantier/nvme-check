@@ -8,19 +8,16 @@
 //! a test ever needs to reuse space mid-run.
 
 const std = @import("std");
+const machines = @import("machines.zig");
 
 pub const GuestMem = struct {
     base: u64, // first usable address (low RAM skipped by convention)
     top: u64, // one past the last RAM address (== -m size on pc)
     next: u64,
 
-    const machines = @import("machines.zig");
-
-    /// 256 MiB pc-style default; bump top when the machine's -m differs.
-    pub fn init() GuestMem {
-        return initFor(machines.pc);
-    }
-
+    /// Build a window from a machine row. Usually you should not call this
+    /// directly: a `qtest.Session` already holds one initialized from the
+    /// machine it targets (see `Session.guestMem`).
     pub fn initFor(row: machines.Row) GuestMem {
         return .{ .base = row.ram_base, .top = row.ram_top, .next = row.ram_base };
     }
@@ -39,7 +36,7 @@ pub const GuestMem = struct {
 };
 
 test "bump allocator: alignment, packing, exhaustion" {
-    var g = GuestMem.init();
+    var g = GuestMem.initFor(machines.pc);
 
     const a = try g.alloc(10, 4096);
     try std.testing.expectEqual(@as(u64, 0x0010_0000), a); // already aligned
