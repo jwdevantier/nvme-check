@@ -81,6 +81,23 @@ int vfn_shim_errno(void)
 	return errno;
 }
 
+/*
+ * Register (fd >= 0) or clear (fd < 0, normally the caller just disables) one
+ * eventfd for one MSI-X vector. Wraps vfio_set_irq()/vfio_disable_irq() so the
+ * Zig test layer need not name the controller's nested struct vfio_device.
+ *
+ * Return: 0 on success, -1 and sets errno on error.
+ */
+int vfn_shim_set_irq(struct nvme_ctrl *ctrl, int vector, int fd)
+{
+	return vfio_set_irq(&ctrl->pci.dev, &fd, vector, 1);
+}
+
+int vfn_shim_disable_irq(struct nvme_ctrl *ctrl, int vector)
+{
+	return vfio_disable_irq(&ctrl->pci.dev, vector, 1);
+}
+
 /* Validation for the s390x pread/pwrite BAR backend: read the raw NVMe CAP
  * register out of BAR0 through the VFIO fd, bypassing mmap. */
 long vfn_shim_pread(struct nvme_ctrl *ctrl, void *buf, size_t len, unsigned long off)

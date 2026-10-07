@@ -101,14 +101,15 @@ test "admin Set/Get Features reserved FID rejected" {
     var st = nvme.status(r.cqe);
     try std.testing.expectEqual(spec.sc_invalid_field, st.sc);
     try std.testing.expectEqual(@as(u3, 0), st.sct);
-    try std.testing.expect(st.dnr);
+    // Figure 126 gives no general "unsupported field => DNR=1" rule: its only
+    // firm rule is that DNR should be cleared to '0' when SCT and SC are both 0.
+    // Here SCT=0 and SC=Invalid Field (non-zero), so DNR is unconstrained.
 
     var sf = spec.setFeaturesCmd(bad, 0, 0);
     r = try common.admin(&sf, null, 0);
     try std.testing.expect(!r.ok);
     st = nvme.status(r.cqe);
     try std.testing.expectEqual(spec.sc_invalid_field, st.sc);
-    try std.testing.expect(st.dnr);
 }
 
 // Set Features is itself mandatory, and features 01h/02h/04h/0Bh are mandatory
@@ -308,9 +309,8 @@ test "admin Set Features SEL and feature status codes" {
 }
 
 // Number of Queues is set once at init; setting it again while no I/O queue
-// exists is legal and must report at least one I/O SQ and CQ. This test must
-// run before any Create I/O *Q, because after that the command is a sequence
-// error.
+// exists is legal. This test must run before any Create I/O *Q, because after
+// that the command is a sequence error.
 test "admin Set/Get Features Number of Queues" {
     var sf = spec.setFeaturesCmd(spec.fid_num_queues, 0, 0); // request minimum
     const set_cqe = try common.adminOk(&sf, null, 0);
@@ -324,9 +324,9 @@ test "admin Set/Get Features Number of Queues" {
         granted & 0xffff, granted >> 16, current & 0xffff, current >> 16,
     });
     try std.testing.expectEqual(granted, current);
-    // Figure 473: "A minimum of one queue shall be allocated" for both the I/O
-    // Submission Queue and the I/O Completion Queue, so a granted value of 0
-    // for either is non-conformant.
-    try std.testing.expect((granted & 0xffff) >= 1); // NSQA: >= 1 I/O SQ
-    try std.testing.expect((granted >> 16) >= 1); // NCQA: >= 1 I/O CQ
+    // 1.4(c) Figure 287: NCQA and NSQA are 0's based and "a minimum of one queue
+    // shall be allocated", so 0 already means one queue. The mandatory minimum
+    // is therefore encoded by every representable value, and there is nothing
+    // further to assert: `>= 1` would demand *two* queues and false-fail a
+    // controller that offers only the mandated one.
 }

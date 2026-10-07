@@ -2,6 +2,7 @@
 //! as patterns repeat; this layer must not become a second NVMe API.
 
 const std = @import("std");
+const c = @import("vfn_c");
 const vfn = @import("vfn");
 const nvme = @import("nvme");
 
@@ -62,4 +63,51 @@ pub fn admin(ctrl: *vfn.Ctrl, cmd: *vfn.Cmd, data: ?*anyopaque, len: usize) Admi
     var cqe: vfn.Cqe = std.mem.zeroes(vfn.Cqe);
     const ret = vfn.admin(ctrl, cmd, data, len, &cqe);
     return .{ .cqe = cqe, .ok = ret == 0 };
+}
+
+// --- real interrupt delivery (VFIO eventfds) -------------------------------
+
+/// std.posix has no close() binding in this Zig; the direct syscall is fine on
+/// this Linux-only (VFIO) path.
+fn closeFd(fd: std.posix.fd_t) void {
+    _ = std.os.linux.close(fd);
+}
+
+/// Bind a fresh eventfd to one MSI-X `vector` via VFIO and return it. The test
+/// then waits on the fd to observe the device actually signalling the vector,
+/// rather than merely polling the completion queue. Pair with `irqDisable`.
+///
+/// The message a vector sends is programmed separately in the MSI-X table; the
+/// eventfd is the host-side observation point VFIO gives us.
+pub fn irqEnable(ctrl: *vfn.Ctrl, vector: u16) !std.posix.fd_t {
+    // eventfd(): libc's wrapper sets errno; std.posix has no binding for it on
+    // Linux, so call the syscall and decode the raw return.
+    const rc = std.os.linux.eventfd(0, std.os.linux.EFD.CLOEXEC);
+    if (std.os.linux.errno(rc) != .SUCCESS) return error.EventfdFailed;
+    const fd: std.posix.fd_t = @intCast(rc);
+
+    errdefer closeFd(fd);
+    if (c.vfn_shim_set_irq(ctrl, vector, fd) != 0) return error.SetIrqFailed;
+    return fd;
+}
+
+/// Wait up to `timeout_ms` for an interrupt event on `fd` (created by
+/// `irqEnable`). Returns true when one arrived (the eventfd counter is read and
+/// drained), false on timeout.
+pub fn irqWait(fd: std.posix.fd_t, timeout_ms: u64) !bool {
+    var fds = [_]std.posix.pollfd{.{
+        .fd = fd,
+        .events = std.posix.POLL.IN,
+        .revents = 0,
+    }};
+    const n = try std.posix.poll(&fds, @intCast(timeout_ms));
+    if (n == 0) return false;
+    var count: [8]u8 = undefined;
+    _ = try std.posix.read(fd, &count);
+    return true;
+}
+
+/// Stop waiting on (and close) an eventfd returned by `irqEnable`.
+pub fn irqDisable(fd: std.posix.fd_t) void {
+    closeFd(fd);
 }

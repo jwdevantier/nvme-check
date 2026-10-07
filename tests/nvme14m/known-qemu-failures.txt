@@ -1,0 +1,8 @@
+# Known QEMU non-conformances for the nvme14m suite.
+# One Zig test name per line, exactly as it appears between `.test.` and
+# `...` in the Zig test-runner output. Append-only as tasks land.
+# Format: <zig test name>   # <1.4c §/Figure>: <one-line reason>
+
+admin error completions   # 1.4c §5.14.2/Fig. 243: unsupported/reserved LID must be SCT=1/SC=09h (Invalid Log Page); QEMU returns generic Invalid Field (SCT=0/SC=02h).
+controller reset / enable state machine   # 1.4c Fig. 78 (§3.1.5): a Controller Reset must restore non-persistent Feature values to their defaults (QEMU never resets n->features, so AEC 0Bh reads 0x7f, not its default 0h) and delete every I/O queue; Delete I/O CQ must then return Invalid Queue Identifier 01h (Fig. 161/130), but QEMU returns 00h (Completion Queue Invalid).
+admin Identify Namespace Identification Descriptor list   # 1.4c Fig. 253: no EUI64/NGUID requires a type-3h UUID descriptor; QEMU omits all three

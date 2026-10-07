@@ -127,24 +127,18 @@ test "admin error completions" {
         try std.testing.expectEqual(spec.sc_invalid_field, st.sc);
     }
 
-    // 3. Get Log Page with an unsupported LID -> Invalid Log Page. BASE
-    //    §5.2.12 makes this a command-specific status (SCT=1, SC=09h, Figure
-    //    103), deliberately distinct from the generic Invalid Field used for
-    //    reserved fields. The POC's emulated NVMe instead reports generic
-    //    Invalid Field for every bad LID; that non-conformance is recorded in
-    //    nvme14m-impl-todo.md, so the conformant status is required when the
-    //    controller reports SCT=1 and the POC's generic answer is pinned
-    //    otherwise.
+    // 3. Get Log Page with an unsupported or reserved LID -> Invalid Log Page.
+    //    1.4(c) §5.14.2 / Figure 243 defines SC=09h (SCT=1) and returns it "if a
+    //    reserved log page is requested"; only controllers compliant with
+    //    "versions 1.3 and earlier" may return generic Invalid Field. QEMU is
+    //    non-conformant here (it returns generic Invalid Field, SCT=0/SC=02h),
+    //    so this failure is recorded in tests/nvme14m/known-qemu-failures.txt.
     {
         var cmd = spec.getLogCmd(lid_reserved, 0, 64);
         const st = try submit(&cmd);
         std.debug.print("    error Get Log LID 0x{x} -> sct={d} sc=0x{x}\n", .{ lid_reserved, st.sct, st.sc });
-        if (st.sct == spec.sct_cmd_specific) {
-            try std.testing.expectEqual(spec.csc_invalid_log_page, st.sc);
-        } else {
-            try std.testing.expectEqual(spec.sct_generic, st.sct);
-            try std.testing.expectEqual(spec.sc_invalid_field, st.sc);
-        }
+        try std.testing.expectEqual(spec.sct_cmd_specific, st.sct);
+        try std.testing.expectEqual(spec.csc_invalid_log_page, st.sc);
     }
 
     // 4. Get Log Page with an offset past the end of the log page -> Invalid
@@ -222,7 +216,7 @@ test "admin Asynchronous Event Request limit" {
     const cq = ctrl_.adminq.cq;
 
     var dma = try common.dmaMap(4096);
-    defer dma.buf.deinit();
+    defer dma.deinit();
     {
         var id = spec.identifyCmd(spec.cns_ctrl, 0, 0);
         const st = try submitMapped(&id, dma.iova, 4096);
@@ -298,7 +292,7 @@ test "admin asynchronous event delivery" {
     const cq = ctrl_.adminq.cq;
 
     var dma = try common.dmaMap(4096);
-    defer dma.buf.deinit();
+    defer dma.deinit();
 
     // Remember the current composite over-temperature threshold (Feature 04h
     // whose CDW11 selects THSEL=over, TMPSEL=composite, Figure 407) so it can

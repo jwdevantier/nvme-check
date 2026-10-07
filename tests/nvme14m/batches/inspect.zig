@@ -10,8 +10,9 @@
 //! (NSID 0, which the device rejects) to exercise Error Information logging;
 //! neither reads or writes user data and every queue created is deleted. The
 //! MSI-X test attempts to enable MSI-X, binds a queue to a valid vector and
-//! completes a command on it; observing the interrupt message itself is
-//! deferred to the qtest lane (the libvfn lane polls and cannot see it).
+//! completes a command on it (polled); a second test programs the vector's
+//! MSI-X table entry, registers a VFIO eventfd and waits for the device to
+//! signal it, so real interrupt delivery is observed in the libvfn lane too.
 //! Because no test leaves state behind, they share one controller session,
 //! opened once by `common.ctrl()` (libvfn `nvme_init`: reset → admin queue →
 //! enable → Identify).
@@ -163,12 +164,10 @@ test "transport interrupt masking INTMS INTMC" {
 
 // Set up a real MSI-X completion path: enable MSI-X, bind an I/O completion
 // queue to a valid vector (Create I/O CQ CDW11.IV), and complete a command on
-// it. Observing the resulting interrupt would require polling a VFIO eventfd
-// for the vector; the libvfn lane polls completion queues and the harness maps
-// only the register page of BAR0, so the message itself is not observable
-// here. The delivery half therefore belongs to the qtest lane.
-//
-// DEFERRED (qtest): real interrupt delivery — libvfn lane cannot observe.
+// it. This test only proves the queue-binding half: it polls the completion
+// queue, so it does not observe the interrupt message. The separate
+// "MSI-X interrupt delivery" test below registers a VFIO eventfd and waits for
+// the device to signal the vector.
 test "MSI-X vector setup and command completion" {
     const ctrl_ = try common.ctrl();
     const msix = try common.msix();
@@ -179,10 +178,10 @@ test "MSI-X vector setup and command completion" {
     const vector: u16 = 0;
 
     // Enable MSI-X so the device would accept the vector (MSI-X Message
-    // Control bit 15); restore the original control word when done. The
-    // harness's VFIO setup does not allocate per-vector eventfds, so on this
-    // lane the write may not take. The completion path still works either way
-    // because the queue is polled, and vector 0 is legal in both modes.
+    // Control bit 15); restore the original control word when done. The kernel
+    // owns the MSI-X Enable bit while the device is bound to vfio-pci, so the
+    // write may not take. The completion path still works either way because
+    // the queue is polled, and vector 0 is legal in both modes.
     common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, msix.mc | 0x8000);
     defer common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, msix.mc);
     const after = try common.msix();
@@ -204,7 +203,117 @@ test "MSI-X vector setup and command completion" {
     var cqe = std.mem.zeroes(vfn.Cqe);
     try std.testing.expectEqual(@as(c_int, 0), c.nvme_rq_spin(rq, &cqe));
     try std.testing.expectEqual(spec.sc_success, nvme.status(cqe).sc);
-    std.debug.print("    MSI-X: command completed on vector {d} (delivery deferred)\n", .{vector});
+    std.debug.print("    MSI-X: command completed on vector {d} (polled; delivery checked separately)\n", .{vector});
+}
+
+// Real MSI-X interrupt delivery. The setup test above only shows a queue can be
+// bound to a vector and polled; this test shows the controller actually raises
+// the vector's MSI-X message. Program vector 0's table entry (message address =
+// a DMA IOVA mapped in the controller's IOMMU, message data = a magic
+// constant, vector control = unmasked), bind an I/O CQ to that vector, register
+// a VFIO eventfd for it, and wait on the fd after submitting a Flush.
+//
+// 1.4(c) Figure 153 (Create I/O CQ CDW11): a queue created with Interrupts
+// Enabled and a valid Interrupt Vector signals that MSI-X vector (§2.4) when a
+// completion is posted; the eventfd is where VFIO surfaces it.
+test "MSI-X interrupt delivery" {
+    const ctrl_ = try common.ctrl();
+    const msix = try common.msix();
+    std.debug.print("    MSI-X delivery: table=BIR{d}+0x{x} vectors={d}\n", .{
+        msix.tableBir(), msix.tableOffset(), msix.vectors,
+    });
+
+    // The MSI-X table has to sit inside BAR0 at or above the doorbell window
+    // that libvfn maps (regs = [0, 0x1000), doorbells = [0x1000, end)). A table
+    // in another BAR, or below 0x1000, is out of this lane's scope: it cannot be
+    // reached through ctrl.doorbells.
+    if (msix.tableBir() != 0 or msix.tableOffset() < 0x1000) {
+        // Keep this tiny; the structural checks in the tests above already
+        // cover such controllers.
+        return error.SkipZigTest;
+    }
+
+    // The message address must be an IOVA the controller's IOMMU will accept
+    // (the vfio-pci table trap rejects a bare physical address), so map one page
+    // and aim the vector at it. The data is an arbitrary marker; the eventfd,
+    // not the DMA, is the observation point.
+    var dma = try common.dmaMap(vfntest.page_size);
+    defer dma.deinit();
+
+    // Entry `v` of the table: four dwords at tableOffset + 16*v, relative to the
+    // doorbell mapping (subtract the 0x1000 window base).
+    const vector: u16 = 0;
+    const entry: usize = @as(usize, msix.tableOffset()) + 16 * @as(usize, vector) - 0x1000;
+    const saved: [4]u32 = .{
+        common.dbRead32(ctrl_, entry),
+        common.dbRead32(ctrl_, entry + 4),
+        common.dbRead32(ctrl_, entry + 8),
+        common.dbRead32(ctrl_, entry + 12),
+    };
+
+    // Cleanup, in reverse declaration order: drop the queues first, then the
+    // eventfd, then restore the table entry, then the Message Control word, then
+    // the DMA mapping the vector pointed at.
+    defer common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, msix.mc);
+    defer {
+        common.dbWrite32(ctrl_, entry, saved[0]);
+        common.dbWrite32(ctrl_, entry + 4, saved[1]);
+        common.dbWrite32(ctrl_, entry + 8, saved[2]);
+        common.dbWrite32(ctrl_, entry + 12, saved[3]);
+    }
+
+    // Message address lo/hi = the IOVA; message data = a magic constant;
+    // vector control = 0 (unmasked, unmodified delivery).
+    const magic: u32 = 0x4e56_4d65; // "NVMe"
+    common.dbWrite32(ctrl_, entry, @truncate(dma.iova));
+    common.dbWrite32(ctrl_, entry + 4, @truncate(dma.iova >> 32));
+    common.dbWrite32(ctrl_, entry + 8, magic);
+    common.dbWrite32(ctrl_, entry + 12, 0);
+
+    // Enable MSI-X and clear the function mask (Message Control bits 15 and
+    // 14). The kernel owns these while the device is bound to vfio-pci, so the
+    // write may read back unchanged; delivery still goes through the registered
+    // eventfd when the vector fires.
+    common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, (msix.mc | 0x8000) & ~@as(u16, 0x4000));
+
+    const fd = try vfntest.irqEnable(ctrl_, vector);
+    defer {
+        _ = c.vfn_shim_disable_irq(ctrl_, vector);
+        vfntest.irqDisable(fd);
+    }
+
+    // Bind I/O CQ 1 to vector 0 (interrupts enabled), create SQ 1 on it, then
+    // submit a Flush through the request tracker.
+    try std.testing.expectEqual(@as(c_int, 0), c.nvme_create_iocq(ctrl_, 1, 8, @as(c_int, vector)));
+    defer _ = c.nvme_delete_iocq(ctrl_, 1);
+    try std.testing.expectEqual(@as(c_int, 0), c.nvme_create_iosq(ctrl_, 1, 8, &ctrl_.cq[1], 0));
+    defer _ = c.nvme_delete_iosq(ctrl_, 1);
+
+    const rq = vfn.rqAcquire(&ctrl_.sq[1]) orelse return error.NoRequestTracker;
+    defer vfn.rqRelease(rq);
+    var cmd = std.mem.zeroes(vfn.Cmd);
+    cmd.rw.opcode = spec.nvm_flush;
+    cmd.rw.nsid = c.cpu_to_le32(1);
+    vfn.rqExec(rq, &cmd);
+
+    // The controller must signal the vector when the Flush completes. Wait on
+    // the eventfd *before* draining the CQ, so this observes delivery rather
+    // than falling back to polling.
+    if (!try vfntest.irqWait(fd, 2000)) {
+        // Drain the completion (if any) so the queues delete cleanly, then fail:
+        // the device never raised the vector.
+        var missing = std.mem.zeroes(vfn.Cqe);
+        _ = c.nvme_rq_spin(rq, &missing);
+        std.debug.print("    MSI-X delivery: vector {d} never signalled (completion sc=0x{x})\n", .{
+            vector, nvme.status(missing).sc,
+        });
+        return error.InterruptNotDelivered;
+    }
+
+    var cqe = std.mem.zeroes(vfn.Cqe);
+    try std.testing.expectEqual(@as(c_int, 0), c.nvme_rq_spin(rq, &cqe));
+    try std.testing.expectEqual(spec.sc_success, nvme.status(cqe).sc);
+    std.debug.print("    MSI-X delivery: vector {d} signalled, Flush completed\n", .{vector});
 }
 
 // --- §1.1 mandatory admin commands / §5 mandatory Identify structures -----
@@ -237,6 +346,7 @@ test "admin Identify Controller mandatory fields" {
     const cqes = spec.get8(b, spec.idc_cqes);
     const nn = spec.get32(b, spec.idc_nn);
     const oncs = spec.get16(b, spec.idc_oncs);
+    const fuses = spec.get16(b, spec.idc_fuses);
     const fna = spec.get8(b, spec.idc_fna);
     const vwc = spec.get8(b, spec.idc_vwc);
     const awun = spec.get16(b, spec.idc_awun);
@@ -247,7 +357,7 @@ test "admin Identify Controller mandatory fields" {
 
     std.debug.print("    id-ctrl: vid=0x{x} ssvid=0x{x} ver=0x{x} cntlid={d} mdts={d}\n", .{ vid, ssvid, ver, cntlid, mdts });
     std.debug.print("    id-ctrl: oacs=0x{x} acl={d} aerl={d} frmw=0x{x} lpa=0x{x} elpe={d} npss={d}\n", .{ oacs, acl, aerl, frmw, lpa, elpe, npss });
-    std.debug.print("    id-ctrl: sqes=0x{x} cqes=0x{x} nn={d} oncs=0x{x} fna=0x{x} vwc=0x{x}\n", .{ sqes, cqes, nn, oncs, fna, vwc });
+    std.debug.print("    id-ctrl: sqes=0x{x} cqes=0x{x} nn={d} oncs=0x{x} fuses=0x{x} fna=0x{x} vwc=0x{x}\n", .{ sqes, cqes, nn, oncs, fuses, fna, vwc });
     std.debug.print("    id-ctrl: awun={d} awupf={d} acwu={d} sgls=0x{x}\n", .{ awun, awupf, acwu, sgls });
 
     // VER is the supported base specification version and must match VS.
@@ -332,12 +442,25 @@ test "admin Identify Controller mandatory fields" {
     if (sgl_mode == 0) try std.testing.expectEqual(@as(u32, 0), sgls);
     try std.testing.expectEqual(@as(u32, 0), sgls & 0xffc000f8); // reserved bits
 
-    try std.testing.expect(vwc & 0x1 == 1); // Volatile Write Cache present
+    // FUSES (Figure 251 bytes 523:522, an M field): the field is 16-bit and
+    // bits 15:1 are reserved; bit 0 is Fused Compare-and-Write Supported.
+    try std.testing.expectEqual(@as(u16, 0), fuses & spec.fuses_reserved);
+    std.debug.print("    id-ctrl: fused compare-and-write supported={d}\n", .{fuses & 1});
+
+    // VWC (Figure 251 byte 525, an M field): bits 7:3 are reserved. Bits 2:1
+    // select the Flush NSID=FFFFFFFFh behaviour and shall not be 00b for a
+    // controller compliant with 1.4 or later (only controllers compliant with
+    // "versions 1.3 and earlier" may return 00b). Bit 0 reports a volatile
+    // write cache, which is optional, so it is printed but not asserted
+    // (QEMU reports 0b111).
+    try std.testing.expect((vwc >> 1) & 0x3 != 0);
+    std.debug.print("    id-ctrl: volatile write cache present={d}\n", .{vwc & 1});
+
     try std.testing.expect(std.mem.eql(u8, subnqn[0..4], "nqn."));
 }
 
 // CNTRLTYPE, OAES and CTRATT are mandatory for an I/O controller in 1.4
-// (Figure 328: bytes 111, 95:92 and 99:96). Nothing else reads them, so a
+// (Figure 251: bytes 111, 95:92 and 99:96). Nothing else reads them, so a
 // device that omits them still otherwise "looks" 1.4 — hence this test.
 test "admin Identify Controller 1.4 fields" {
     var buf = try vfntest.pageBuffer(4096);
@@ -358,17 +481,26 @@ test "admin Identify Controller 1.4 fields" {
     // 1h is an I/O controller. This POC is an I/O controller.
     try std.testing.expectEqual(@as(u8, 1), cntrltype);
 
-    // OAES is present; the Identify command above did not abort. Any value is
-    // legal (a controller need not enable any optional event), so no bit is
-    // asserted here; it is only reported above.
+    // OAES is present; the Identify command above did not abort. In 1.4(c)
+    // (Figure 251 bytes 95:92) bits 31:15, bit 10 and bits 7:0 are reserved;
+    // those bits are defined in later revisions, so under version policy (B)
+    // they are surfaced (printed above) but not asserted. No defined bit is
+    // asserted either: a controller need not enable any optional event.
 
-    // CTRATT is present. A controller claiming 1.4 must not advertise 2.x-only
-    // capabilities: Flexible Data Placement Support (bit 19), Fixed Capacity
-    // Management (bit 11), and Multi-Domain Subsystem (bit 10). FDPS and FCM
-    // are mutually exclusive (Figure 328).
-    try std.testing.expectEqual(@as(u32, 0), ctratt & spec.ctratt_fdps);
-    try std.testing.expectEqual(@as(u32, 0), ctratt & spec.ctratt_fcm);
-    try std.testing.expectEqual(@as(u32, 0), ctratt & spec.ctratt_mds);
+    // CTRATT is present. In 1.4(c) (Figure 251 bytes 99:96) bits 31:10 are
+    // reserved; the bits the suite knows (Multi-Domain Subsystem bit 10, Fixed
+    // Capacity Management bit 11, Flexible Data Placement Support bit 19) are
+    // 2.x capabilities. Policy (B): accept a 2.x controller, so a set bit is
+    // surfaced as a warning rather than failing the run.
+    if (ctratt & spec.ctratt_mds != 0) {
+        std.debug.print("    WARNING: CTRATT.MDS (bit 10) set; reserved in 1.4(c), 2.x Multi-Domain Subsystem\n", .{});
+    }
+    if (ctratt & spec.ctratt_fcm != 0) {
+        std.debug.print("    WARNING: CTRATT.FCM (bit 11) set; reserved in 1.4(c), 2.x Fixed Capacity Management\n", .{});
+    }
+    if (ctratt & spec.ctratt_fdps != 0) {
+        std.debug.print("    WARNING: CTRATT.FDPS (bit 19) set; reserved in 1.4(c), 2.x Flexible Data Placement Support\n", .{});
+    }
 }
 
 test "admin Identify Namespace mandatory fields" {
@@ -400,7 +532,10 @@ test "admin Identify Namespace mandatory fields" {
     try std.testing.expect(nlbaf <= 63);
     try std.testing.expect((flbas & 0xf) <= nlbaf);
     try std.testing.expect(lbaf0_ms == 0); // PRP-only POC: no metadata
-    try std.testing.expect(lbaf0_ds >= 9 and lbaf0_ds <= 12); // 512B .. 4KiB
+    // LBADS (Figure 249 bytes 23:16) is a power of two; values < 9 (512 B) are
+    // not supported and a reported 0h means the format is unused. 1.4(c) sets
+    // no upper bound.
+    try std.testing.expect(lbaf0_ds == 0 or lbaf0_ds >= 9);
 }
 
 test "admin Identify Active Namespace ID list" {
@@ -446,7 +581,7 @@ test "admin Identify Namespace Identification Descriptor list" {
 
     // Cross-check the descriptors against the Identify Namespace identifier
     // fields: a 1h descriptor is a copy of EUI64 and a 2h one a copy of NGUID,
-    // and neither shall be reported when its field is cleared to 0 (Fig. 331).
+    // and neither shall be reported when its field is cleared to 0 (Fig. 253).
     var nsbuf = try vfntest.pageBuffer(4096);
     defer nsbuf.deinit();
     var nscmd = spec.identifyCmd(spec.cns_ns, 0, 1);
@@ -460,7 +595,7 @@ test "admin Identify Namespace Identification Descriptor list" {
     try std.testing.expectEqual(spec.sc_success, nvme.status(cqe).sc);
 
     // Descriptors are NIDT (1B) + NIDL (1B) + 2 reserved bytes + NID (NIDL B);
-    // the total length of one descriptor is NIDL + 4 (Figure 331). The list is
+    // the total length of one descriptor is NIDL + 4 (Figure 253). The list is
     // terminated by a zero NIDT/NIDL descriptor.
     const b = buf.bytes();
     var off: usize = 0;
@@ -507,13 +642,13 @@ test "admin Identify Namespace Identification Descriptor list" {
     try std.testing.expectEqual(eui64_set, have_eui64);
     try std.testing.expectEqual(nguid_set, have_nguid);
 
-    // Figure 331: a namespace that reports neither an EUI64 (1h) nor an NGUID
-    // (2h) descriptor shall report a type-3h UUID descriptor. The POC's
-    // implicit namespace (QEMU `-device nvme,drive=...`) clears EUI64 and
-    // NGUID *and* omits the UUID: the nvme-ns `uuid` property is only settable
-    // on the cold path, which this hotplug suite does not use. The mandatory
-    // fallback is therefore deferred on the POC (see nvme14m-impl-todo.md); the
-    // structural checks above still run.
+    // Figure 253: if the namespace supports neither an IEEE EUI64 (i.e., the
+    // EUI64 field is cleared to 0h) nor an NGUID (the NGUID field is cleared to
+    // 0h), then it shall report a type-3h Namespace UUID descriptor. QEMU's
+    // implicit namespace clears EUI64 and NGUID *and* omits the UUID (the
+    // nvme-ns `uuid` property is cold-path only), so this is a known QEMU
+    // non-conformance (see known-qemu-failures.txt).
+    if (!eui64_set and !nguid_set) try std.testing.expect(have_uuid);
 }
 
 // NSID semantics. BASE §3.2.1.2: 0h is an invalid NSID, as is any NSID greater
@@ -597,9 +732,9 @@ test "admin Identify Namespace NSID semantics and NN" {
 
 // --- §3 mandatory log pages -----------------------------------------------
 
-/// Read a mandatory 512-byte log page (Figure 31) into `buf` and return the
-/// completion. The device transfers 512 B; libvfn's mapping length must be a
-/// whole number of pages.
+/// Read a mandatory 512-byte log page (Figure 424) into `buf` and return
+/// the completion. The device transfers 512 B; libvfn's mapping length must be
+/// a whole number of pages.
 fn readLogPage(buf: vfntest.PageBuf, lid: u8) !vfn.Cqe {
     var cmd = spec.getLogCmd(lid, 0xffffffff, 512);
     return common.adminOk(&cmd, common.ptr(buf), buf.bytes().len);
@@ -607,23 +742,24 @@ fn readLogPage(buf: vfntest.PageBuf, lid: u8) !vfn.Cqe {
 
 // Get Log Page succeeds for the three mandatory log page IDs and the mandatory
 // fields inside each page are well-formed:
-//   01h Error Information  (Figure 209)
-//   02h SMART / Health     (Figure 210)
-//   03h Firmware Slot Info (Figure 212)
+//   01h Error Information  (Figure 197)
+//   02h SMART / Health     (Figure 198)
+//   03h Firmware Slot Info (Figure 200)
 test "admin Get Log Page mandatory IDs and contents" {
     const ctrl_ = try common.ctrl();
     var buf = try vfntest.pageBuffer(4096);
     defer buf.deinit();
 
-    // --- 01h Error Information, Figure 209 --------------------------------
+    // --- 01h Error Information, Figure 197 (1.4(c)) -----------------------
     //
     // ECNT is the 64-bit unique id of the most recent entry: it starts at 1,
     // is incremented per unique error and rolls over to 1 at FFFF...FFFFh. 0
     // is the invalid-entry marker used when there are fewer entries than the
     // log holds. Snapshot ECNT, induce a known failed admin command (Format
     // NVM, 80h, NSID 0 — rejected, so it never formats anything), then read the
-    // log again and require the entry to carry the failed command's SQID, CID
-    // and completion status.
+    // log again. An entry is only required when the failed command completed
+    // with the More (M) bit set (Figure 126 / §5.14.1.1); it must then carry the
+    // failed command's SQID, CID and completion status.
     var ecnt: u64 = 0;
     {
         _ = try readLogPage(buf, spec.log_error_info);
@@ -646,33 +782,36 @@ test "admin Get Log Page mandatory IDs and contents" {
         const sqid = spec.get16(b, 8);
         const cid = spec.get16(b, 10);
         const sts = spec.get16(b, 12);
-        const opc = spec.get8(b, 0x1b);
-        const lpver = spec.get8(b, 0x3f);
-        std.debug.print("    log ErrorInformation (0x1): ecnt={d} (was {d}) sqid={d} cid={d} sts=0x{x} opc=0x{x} lpver={d}\n", .{ after, before, sqid, cid, sts, opc, lpver });
+        std.debug.print("    log ErrorInformation (0x1): ecnt={d} (was {d}) sqid={d} cid={d} sts=0x{x}\n", .{ after, before, sqid, cid, sts });
         ecnt = after;
 
-        if (after == 0) {
-            // No recorded entry: the page is the all-zero invalid entry. Some
-            // controllers (the POC's emulated NVMe) never log command errors;
-            // when an entry *is* present it is checked below.
-            try std.testing.expectEqual(@as(u64, 0), before);
-            try std.testing.expectEqual(@as(u16, 0), sqid);
-            try std.testing.expectEqual(@as(u16, 0), cid);
-            try std.testing.expectEqual(@as(u16, 0), sts);
-        } else {
+        // Figure 126 defines the More (M) bit: M=1 means "there is more status
+        // information for this command as part of the Error Information log",
+        // M=0 means there is no additional status information. §5.14.1.1 ties
+        // the log entry to that bit ("extended error information is provided
+        // when the More (M) bit is set to '1'"). An entry is therefore required
+        // iff M=1; with M=0 the controller has no obligation to log the failure
+        // (QEMU clears M and does not), so nothing is asserted in that case.
+        if (fail.m) {
+            // M=1: the induced failure must have produced an entry. It must not
+            // be the 0h invalid marker (Figure 197), and ECNT — a unique id that
+            // starts at 1, increments per unique entry and rolls to 1 at
+            // FFFFFFFF_FFFFFFFFh — must have advanced by exactly one.
+            try std.testing.expect(after != 0);
             const expected = if (before == std.math.maxInt(u64)) 1 else before + 1;
             try std.testing.expectEqual(expected, after);
             try std.testing.expectEqual(@as(u16, 0), sqid); // admin SQ is 0
             try std.testing.expectEqual(want_cid, cid);
-            // STS bits 15:1 are the failed command's status field (Figure 100).
+            // STS bits 15:1 are the failed command's CQE status field (Figure 126).
             try std.testing.expectEqual(@as(u8, fail.sc), @as(u8, @truncate((sts >> 1) & 0xff)));
             try std.testing.expectEqual(@as(u3, fail.sct), @as(u3, @truncate((sts >> 9) & 0x7)));
-            try std.testing.expectEqual(spec.admin_format_nvm, opc);
-            try std.testing.expectEqual(@as(u8, 1), lpver); // Figure 209 LPVER
+            // Bytes 31:30 and 63:42 are Reserved in 1.4(c) Figure 197; the OPC
+            // and LPVER fields of BASE 2.3 Figure 209 do not exist here and are
+            // deliberately not asserted.
         }
     }
 
-    // --- 02h SMART / Health Information, Figure 210 -----------------------
+    // --- 02h SMART / Health Information, Figure 198 -----------------------
     {
         const cqe = try readLogPage(buf, spec.log_smart);
         try std.testing.expectEqual(spec.sc_success, nvme.status(cqe).sc);
@@ -695,18 +834,18 @@ test "admin Get Log Page mandatory IDs and contents" {
         // Composite Temperature is in Kelvins; 0K is not an operating value.
         try std.testing.expect(temp_k > 0);
         // Available Spare and its threshold are normalized percentages; values
-        // 101..255 are reserved (Figure 210).
+        // 101..255 are reserved (Figure 198).
         try std.testing.expect(avsp <= 100);
         try std.testing.expect(avspt <= 100);
         // Percentage Used is 0..255 (255 = 255% or more); the life-of-controller
         // counters are not required to be non-zero (a fresh controller may
         // report 0) but must decode as 64-bit counts.
         // NEILE is the number of Error Information log entries over the life of
-        // the controller, which is ECNT (Figure 209/210).
+        // the controller, which is ECNT (Figure 197/198).
         try std.testing.expectEqual(ecnt, neile);
     }
 
-    // --- 03h Firmware Slot Information, Figure 212 ------------------------
+    // --- 03h Firmware Slot Information, Figure 200 ------------------------
     {
         const cqe = try readLogPage(buf, spec.log_fw_slot);
         try std.testing.expectEqual(spec.sc_success, nvme.status(cqe).sc);

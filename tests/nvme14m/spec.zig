@@ -237,6 +237,10 @@ pub const idc_cqes: usize = 513;
 pub const idc_nn: usize = 516;
 pub const idc_oncs: usize = 520;
 pub const idc_fuses: usize = 522;
+// Fused Operation Support (FUSES, Figure 251 bytes 523:522): a 16-bit field.
+// 1.4(c) reserves bits 15:1 and defines only bit 0 (Fused Compare-and-Write
+// Supported); the field is Mandatory.
+pub const fuses_reserved: u16 = 0xfffe; // bits 15:1
 pub const idc_fna: usize = 524;
 pub const idc_vwc: usize = 525;
 pub const idc_awun: usize = 526;
@@ -532,6 +536,8 @@ test "offsets and status codes match the figures" {
     try std.testing.expectEqual(@as(usize, 96), idc_ctratt);
     try std.testing.expectEqual(@as(usize, 111), idc_cntrltype);
     try std.testing.expectEqual(@as(usize, 522), idc_fuses);
+    // FUSES (Figure 251 bytes 523:522) is 16-bit; bits 15:1 are reserved.
+    try std.testing.expectEqual(@as(u16, 0xfffe), fuses_reserved);
 
     // Generic command status codes, BASE Figure 102.
     try std.testing.expectEqual(@as(u8, 0x01), sc_invalid_opcode);

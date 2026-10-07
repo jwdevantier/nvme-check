@@ -123,6 +123,14 @@ pub fn dbWrite32(ctrl_: *vfn.Ctrl, off: usize, v: u32) void {
     c.mmio_write32(@ptrCast(base + off), c.cpu_to_le32(v));
 }
 
+/// Read a 32-bit word from the doorbell region (the inverse of `dbWrite32`).
+/// Used to save/restore the MSI-X table, which lives above the doorbell window
+/// inside the same BAR0 mapping.
+pub fn dbRead32(ctrl_: *vfn.Ctrl, off: usize) u32 {
+    const base: [*c]u8 = @ptrCast(ctrl_.doorbells);
+    return c.le32_to_cpu(c.mmio_read32(@ptrCast(base + off)));
+}
+
 // --- PCI config space (little-endian on every host) -----------------------
 
 pub fn cfgRead8(ctrl_: *vfn.Ctrl, off: u64) u8 {
