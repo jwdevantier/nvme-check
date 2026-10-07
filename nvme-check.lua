@@ -295,7 +295,9 @@ for _, p in ipairs(selected) do
 	if err == nil then
 		print(("  PASS [%s] %s"):format(p.arch, label))
 	else
-		print(("  FAIL [%s] %s: %s"):format(p.arch, label, tostring(err)))
+		-- concise here; the full err (which for libvfn-simple embeds the
+		-- guest's whole stdout/stderr) is printed once in the global summary
+		print(("  FAIL [%s] %s"):format(p.arch, label))
 		failures[#failures + 1] = { arch = p.arch, name = label, err = tostring(err) }
 	end
 end
