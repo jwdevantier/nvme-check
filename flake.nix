@@ -7,7 +7,7 @@
 
     # Pinned makac: the orchestrator is provided to the dev shell from its own
     # flake (see jwdevantier/makac). Bump the commit here and re-lock to update.
-    makac.url = "github:jwdevantier/makac/23eae101c47eb449ed2f2ccb5e5b020e71fefe74";
+    makac.url = "github:jwdevantier/makac/685c70bb76396cc52a6b7913acf782d743ccf360";
   };
 
   outputs = { self, nixpkgs, makac }:
