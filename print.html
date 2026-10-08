@@ -1,0 +1,1233 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>nvme-check</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-9f62cd5e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-3209158d.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">nvme-check</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/jwdevantier/nvme-check" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="overview"><a class="header" href="#overview">Overview</a></h1>
+<p>nvme-check is a test setup for QEMU’s emulated NVMe device (<code>hw/nvme</code>): its
+immediate purpose is checking that the device behaves as the official NVM
+Express specifications require — against any QEMU build, including one
+carrying a patch under review.</p>
+<p>There are two parts to that, and the second may be useful well beyond NVMe:</p>
+<ol>
+<li>
+<p><strong>A test runner</strong>, <code>./nvme-check.lua</code>. It auto-discovers suites under
+<code>tests/</code>, loads each suite’s declared tests, and can enumerate, filter and
+execute them. Filtering is a pytest-inspired tag expression
+(<code>-w "fast and not slow"</code>); a test’s name, its suite and the architecture
+are implicit tags.</p>
+</li>
+<li>
+<p><strong>VM test infrastructure.</strong> Per-architecture base images are customized
+with cloud-init, built once and snapshotted; a test then resumes a running
+VM from saved state in seconds rather than booting. On top of that: device
+hot-plug over QMP, binding a device to vfio-pci, SSH/SCP control of the
+guest — and the same cross-compiled test binary runs on both amd64 and
+s390x.</p>
+</li>
+</ol>
+<p>How a test actually runs is the job of a <em>driver</em> — a makac action named by
+the test’s <code>uses</code> field (see <a href="#test-drivers">Test drivers</a>). The stock
+<a href="#the-libvfn-simple-driver"><code>libvfn-simple</code></a> driver uses the VM infrastructure
+for black-box device tests: the controller is handed to <code>vfio-pci</code>, and a
+test binary drives it directly over
+<a href="https://github.com/SamsungDS/libvfn">libvfn</a> — queues, doorbells, CQEs, no
+kernel NVMe driver in between. That is the path the current NVMe catalogue
+(TP4176 and friends) takes, and nothing ties a test to it: the
+<a href="#the-base-driver"><code>base</code></a> driver runs an arbitrary function, so the catalogue
+can just as well hold QEMU’s linter scripts, its existing NVMe qtest, or
+anything else deserving a regression check.</p>
+<pre><code class="language-sh">./nvme-check.lua                 # every suite, every architecture
+./nvme-check.lua tp4176:aer      # one test
+./nvme-check.lua --list          # enumerate, run nothing
+</code></pre>
+<h2 id="reading-guide"><a class="header" href="#reading-guide">Reading guide</a></h2>
+<ul>
+<li><a href="#installation">Installation</a> → <a href="#configuration">Configuration</a> →
+<a href="#pre-flight-check">Pre-flight check</a>: get a working setup.</li>
+<li><a href="#user-guide">User guide</a>: run and select tests.</li>
+<li><a href="#architecture">Architecture</a>: what the components are and how they relate.</li>
+<li><a href="#writing-tests">Writing tests</a>: add a test or a suite;
+<a href="#test-drivers">Test drivers</a>: what <code>uses</code> names, the driver contract, writing
+your own.</li>
+<li><a href="#developer-notes">Developer notes</a>: unit tests, libvfn hacking, building
+this book.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="installation"><a class="header" href="#installation">Installation</a></h1>
+<p>Running the suites needs four things on the host:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Requirement</th><th>Provides</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>makac</code></td><td>Test orchestration</td><td>The binary itself; see below.</td></tr>
+<tr><td><code>zig</code> 0.16.x</td><td>Builds the test binaries</td><td><code>build.zig.zon</code> enforces the version.</td></tr>
+<tr><td>A QEMU build</td><td><code>qemu-system-{x86_64,s390x}</code>, <code>qemu-img</code></td><td>The device <em>under test</em>; see <a href="#configuration">Configuration</a>.</td></tr>
+<tr><td><code>genisoimage</code>, <code>ssh</code>, <code>scp</code></td><td>Cloud-init ISO, guest access</td><td>The guest is authorized with <code>ssh.pubkey</code>, default <code>~/.ssh/id_ed25519.pub</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p>There are two supported ways to get these: Nix, which pins every version and
+is the setup the project is developed on, and a traditional Linux install,
+which is best-effort. Both then need the <code>makac.qemu</code> package.</p>
+<h2 id="with-nix"><a class="header" href="#with-nix">With Nix</a></h2>
+<p>The default dev shell provides:</p>
+<ul>
+<li>The Zig toolchain
+<ul>
+<li>used to compile libvfn test programs</li>
+</ul>
+</li>
+<li>the Zig language server,</li>
+<li>qemu-utils
+<ul>
+<li>provides <code>qemu-img</code>, needed to create VM images</li>
+</ul>
+</li>
+<li><code>genisoimage</code>
+<ul>
+<li>cloud-init builders compose a ISO for VM customization</li>
+</ul>
+</li>
+<li><code>makac</code>
+<ul>
+<li>The orchestrator</li>
+</ul>
+</li>
+</ul>
+<pre><code class="language-sh">nix develop
+</code></pre>
+<p>Start your editor from inside this shell so it has access to <code>zls</code>.</p>
+<p>Finally, proceed to <a href="#fetch-the-packages">fetch the makac packages</a>.</p>
+<h2 id="traditional-setup"><a class="header" href="#traditional-setup">Traditional Setup</a></h2>
+<p>Install each dependency with your package manager:</p>
+<ul>
+<li><code>makac</code>
+<ul>
+<li>See <a href="https://jwdevantier.github.io/makac/installation.html">makac docs</a> and pick the option most appropriate for you.</li>
+</ul>
+</li>
+<li><strong><code>zig</code> 0.16.x</strong>
+<ul>
+<li><a href="https://ziglang.org/download/">ziglang.org</a> provides binary packages for various operating systems</li>
+</ul>
+</li>
+<li><strong>QEMU</strong>
+— a build providing <code>qemu-system-x86_64</code>, <code>qemu-system-s390x</code>, and
+<code>qemu-img</code>. Whether a suite is meaningful depends on this build implementing
+the feature under test.</li>
+<li><strong><code>genisoimage</code></strong> — from the <code>cdrkit</code> package.</li>
+<li><strong>The OpenSSH client</strong> — for <code>ssh</code> and <code>scp</code>.</li>
+</ul>
+<p>Finally, proceed to <a href="#fetch-the-packages">fetch the makac packages</a>.</p>
+<h2 id="fetch-the-packages"><a class="header" href="#fetch-the-packages">Fetch the packages</a></h2>
+<p><code>makac_project.lua</code> at the repository root is the project’s dependency
+manifest - run <code>makac fetch</code> to install the package(s) this project
+depends on (<a href="https://jwdevantier.github.io/makac.qemu/">makac.qemu</a>).</p>
+<pre><code># install required (makac) packages
+makac fetch
+</code></pre>
+<p>Fetching is explicit: <code>makac</code> never fetches on its own, so run this after a
+fresh clone, and again whenever the pinned revision changes.</p>
+<p>Next, set the QEMU binaries on the <a href="#configuration">Configuration</a> page:
+there are no defaults, and the suites refuse to run until they are set. The
+<a href="#pre-flight-check">Pre-flight check</a> then confirms the setup.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
+<p>Per-machine settings live in a config file. The QEMU binaries are required:
+there are no built-in paths, and the suites refuse to run until they are set.
+The only environment variable in the configuration story chooses which file to
+read.</p>
+<h2 id="the-config-file"><a class="header" href="#the-config-file">The config file</a></h2>
+<p><code>config.user.lua</code> at the repository root is the conventional location. It is
+gitignored; <code>config.user.sample.lua</code> is an annotated starting point. Which file
+is read, in precedence order:</p>
+<ol>
+<li><code>./nvme-check.lua -c/--config &lt;path&gt;</code> (must exist)</li>
+<li><code>NVME_CONFIG=&lt;path&gt;</code> (must exist)</li>
+<li><code>&lt;project&gt;/config.user.lua</code> (conventional; absent leaves the QEMU paths unset)</li>
+</ol>
+<p>The <code>build</code> keys are optional. The QEMU paths are not. A malformed file fails
+with its parse error. <code>makac doctor</code> shows what resolved from where. Copy the
+sample and edit it:</p>
+<pre><code class="language-lua">-- config.user.sample.lua — per-machine configuration for nvme-check.
+--
+-- Copy to config.user.lua (gitignored) and edit. The QEMU paths are
+-- required; the `build` keys are optional.
+--
+-- Which file is read, in precedence order:
+--   nvme-check.lua -c/--config &lt;path&gt;  &gt;  $NVME_CONFIG  &gt;  ./config.user.lua
+--
+-- Inspect what makac resolved — and what is still missing:
+--   makac doctor nvmecheck
+
+return {
+	qemu = {
+		-- Required: there are no built-in defaults. Point these at the QEMU
+		-- build you want to test. `makac doctor nvmecheck` checks that they
+		-- exist. qemu-img is NOT configured here: it (and genisoimage) is
+		-- invoked by name, resolved on PATH.
+		amd64 = { bin = "/opt/qemu/bin/qemu-system-x86_64" },
+		s390x = { bin = "/opt/qemu/bin/qemu-system-s390x" },
+	},
+
+	ssh = {
+		-- Public key authorized inside the guest for the harness's SSH
+		-- connection. Defaults to ~/.ssh/id_ed25519.pub (the ssh-keygen
+		-- default since OpenSSH 9.5). The matching private key must be
+		-- usable by ssh on this host.
+		-- pubkey = "~/.ssh/id_ed25519.pub",
+	},
+
+	build = {
+		-- true:  always build batches via `nix develop` (flake-pinned zig).
+		-- false: build with the ambient zig on PATH.
+		-- unset: auto — nix when available, ambient zig when not.
+		-- nix = false,
+
+		-- libvfn source-tree override (upstream + your patches); otherwise
+		-- the pinned build.zig.zon dependency is used.
+		-- libvfn_src = "/home/me/repos/libvfn",
+	},
+}
+</code></pre>
+<h2 id="qemu-binaries"><a class="header" href="#qemu-binaries">QEMU binaries</a></h2>
+<p>The QEMU binaries are the one required part of the configuration. The harness
+needs the binaries, not a QEMU source tree:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Setting</th><th>Meaning</th><th>Config key</th></tr>
+</thead>
+<tbody>
+<tr><td>amd64 system</td><td><code>qemu-system-x86_64</code> for amd64 guests</td><td><code>qemu.amd64.bin</code></td></tr>
+<tr><td>s390x system</td><td><code>qemu-system-s390x</code> for s390x guests</td><td><code>qemu.s390x.bin</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>There are no built-in defaults. Until <code>qemu.&lt;arch&gt;.bin</code> is set, <code>makac doctor</code>
+reports it as an error and the suites refuse to run with a message naming the
+missing key. The config key is derived from the architecture name
+(<code>qemu.&lt;arch&gt;.bin</code>), so a new architecture gains its own knob
+automatically.</p>
+<p><strong>NOTE:</strong> <code>qemu-img</code> itself must be on <code>PATH</code>, otherwise steps which create
+the images for the VMs will fail.</p>
+<h2 id="ssh-key"><a class="header" href="#ssh-key">SSH key</a></h2>
+<p>The harness authorizes one public key inside the guest through cloud-init, and
+drives the VM over SSH with the matching private key. It reads
+<code>~/.ssh/id_ed25519.pub</code> by default; override it with:</p>
+<pre><code class="language-lua">return {
+  ssh = { pubkey = "~/.ssh/id_ed25519.pub" },
+}
+</code></pre>
+<p>A leading <code>~/</code> is expanded to <code>$HOME</code>. The matching private key must be one
+that <code>ssh</code> finds by default, or available through <code>ssh-agent</code>.</p>
+<h2 id="the-build-toolchain"><a class="header" href="#the-build-toolchain">The build toolchain</a></h2>
+<p><code>build.nix</code> in <code>config.user.lua</code> determines how binaries are compiled.
+If <code>true</code>, test binaries are built using the nix development shell defined in
+<code>flake.nix</code>. If <code>false</code>, test binaries are built using the <code>zig</code> binary on <code>PATH</code>.</p>
+<p><code>build.libvfn_src</code> in <code>config.user.lua</code> allows you to compile against a local copy
+of libvfn, see <a href="#building-against-a-local-libvfn">Developer notes</a>
+for details</p>
+<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment variables</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>NVME_CONFIG</code></td><td>Which config file to load (see above).</td></tr>
+<tr><td><code>MAKAC_IMG_VERBOSE=1</code></td><td>Stream the guest serial console during the first base-image build. A debugging toggle, not configuration.</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<p>Once the QEMU binaries are set, continue to the
+<a href="#pre-flight-check">Pre-flight check</a> to confirm the setup.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="pre-flight-check"><a class="header" href="#pre-flight-check">Pre-flight check</a></h1>
+<p><code>makac doctor</code> reports the health of makac itself and every package, and is the
+last thing to run before using the suites:</p>
+<pre><code class="language-sh">makac doctor              # everything
+makac doctor nvmecheck    # just this project's package
+</code></pre>
+<p>It checks the resolved configuration, the configured QEMU binaries, that
+<code>qemu-img</code> is on <code>PATH</code>, the batch-build toolchain (your Zig, or Nix), and
+that the harness modules load.
+<code>makac.qemu</code> adds its own checks, including <code>genisoimage</code>. If the report is
+clean, things should work; a later failure caused by a missing tool is a bug in
+the health check.</p>
+<p>The first run on a fresh checkout reports the QEMU paths as errors until you
+set <code>qemu.&lt;arch&gt;.bin</code> in <code>config.user.lua</code>; that is expected.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="user-guide"><a class="header" href="#user-guide">User guide</a></h1>
+<p><code>./nvme-check.lua</code> is the entry point. It discovers the suites (any directory
+under <code>tests/</code> containing a <code>workflow.lua</code>), applies your selection, and runs
+the selected batches.</p>
+<p>A workflow is a <a href="https://jwdevantier.github.io/makac">makac</a> script with the
+<a href="https://jwdevantier.github.io/makac.qemu">makac.qemu</a> actions at its disposal,
+so a suite can in principle drive several VMs and do arbitrary work around the
+test run. In practice tests mostly tend to do the same setup work.
+To that end, <code>nvme-check</code> provides several <a href="#test-drivers">test drivers</a>.</p>
+<p>Before the first run, set the QEMU binaries in the
+<a href="#configuration">Configuration</a>; there are no defaults, and the suites refuse
+to run without them.</p>
+<h2 id="running-tests"><a class="header" href="#running-tests">Running tests</a></h2>
+<pre><code class="language-sh"># everything: every suite, every architecture
+./nvme-check.lua
+
+# one suite on one architecture
+./nvme-check.lua tp4176 -a s390x
+
+# one batch
+./nvme-check.lua tp4176:aer
+
+# show what would run, without running it
+./nvme-check.lua --list
+</code></pre>
+<p>For what happens once a run starts — and why the first run per architecture
+is slow — see
+<a href="#what-a-run-looks-like">the <code>libvfn-simple</code> driver</a>.</p>
+<h2 id="selecting-tests"><a class="header" href="#selecting-tests">Selecting tests</a></h2>
+<p>Selection has two axes: the suites named on the command line, and the
+<code>--where</code> tag expression.</p>
+<h3 id="suites-and-single-tests"><a class="header" href="#suites-and-single-tests">Suites and single tests</a></h3>
+<p>The positional arguments name suites. <code>./nvme-check.lua tp4176</code> runs only that
+suite; with no positional arguments, every discovered suite is selected.
+An unknown name fails with the list of available suites.</p>
+<p>To run a single test, name it as <code>suite:test</code>: <code>./nvme-check.lua tp4176:aer</code>.
+The test name is applied as a name filter across the suites you selected
+(test names are implicit tags — the same mechanism <code>--where aer</code> uses), and
+it combines with the other flags: <code>-a s390x</code> further restricts the
+architecture, <code>-w</code> is and-ed with it. Since the test is named explicitly, a
+name that does not exist is an error listing the suite’s tests, not an empty
+selection.</p>
+<h3 id="tags"><a class="header" href="#tags">Tags</a></h3>
+<p>Every batch is tagged, and <code>--where</code> filters on those tags. There are three
+sources of tags:</p>
+<ol>
+<li>The batch’s <code>tags</code> list in its <code>workflow.lua</code> (for example <code>tp4176</code>,
+<code>fast</code>, <code>slow</code>).</li>
+<li>The batch’s <code>name</code>.</li>
+<li>The architecture it runs on (<code>amd64</code>, <code>s390x</code>).</li>
+</ol>
+<p>So <code>--where aer</code> selects the batch named <code>aer</code>, and <code>--where s390x</code> selects
+everything that runs on s390x.</p>
+<h3 id="the---where-expression-language"><a class="header" href="#the---where-expression-language">The <code>--where</code> expression language</a></h3>
+<p><code>--where</code> takes a boolean expression over tags, in the style of pytest’s <code>-m</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Expression</th><th>Selects batches that …</th></tr>
+</thead>
+<tbody>
+<tr><td><code>aer</code></td><td>carry the tag <code>aer</code></td></tr>
+<tr><td><code>fast and s390x</code></td><td>carry both</td></tr>
+<tr><td><code>aer or feature</code></td><td>carry either</td></tr>
+<tr><td><code>not slow</code></td><td>do not carry <code>slow</code></td></tr>
+<tr><td><code>(aer or feature) and not slow</code></td><td>parentheses group; <code>not</code> binds tightest, then <code>and</code>, then <code>or</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Identifiers are case-sensitive and may contain letters, digits, <code>_</code>, <code>-</code>, and
+<code>.</code>; the words <code>and</code>, <code>or</code>, and <code>not</code> are reserved.</p>
+<p>An unknown tag selects nothing, so an unexpectedly empty run is usually a typo
+— check with <code>--list</code>. A malformed expression fails before any VM boots, with
+a caret at the offending position and exit code 2:</p>
+<pre><code>invalid tag expression: expected a tag or '(' but the expression ended here
+  aer and
+         ^
+</code></pre>
+<p>The expression language is a standalone module, <code>testlib/lib/tagexpr.lua</code>,
+with its own unit suite at <code>testlib/tests/tagexpr_test.lua</code>. That suite is the
+reference for the full grammar:</p>
+<pre><code class="language-sh">makac run testlib/tests/tagexpr_test.lua
+</code></pre>
+<h2 id="flags"><a class="header" href="#flags">Flags</a></h2>
+<pre><code>usage: nvme-check.lua [suite[:test]...] [-c file] [-a arch]... [-w expr] [-l]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>suite[:test]</code> (positional)</td><td>Restrict to these suites, or to one test within a suite (default: all of <code>tests/*</code>).</td></tr>
+<tr><td><code>-c</code>, <code>--config file</code></td><td>Which per-machine config file to use (see <a href="#configuration">Configuration</a>).</td></tr>
+<tr><td><code>-a</code>, <code>--arch arch</code></td><td>Only this architecture (<code>amd64</code>, <code>s390x</code>, …). Repeatable or comma-separated.</td></tr>
+<tr><td><code>-w</code>, <code>--where expr</code></td><td>Boolean tag expression, described above.</td></tr>
+<tr><td><code>-l</code>, <code>--list</code></td><td>List the selected (architecture, batch) pairs without running anything.</td></tr>
+<tr><td><code>-h</code>, <code>--help</code></td><td>Usage text.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="running-a-suite"><a class="header" href="#running-a-suite">Running a suite</a></h2>
+<p>Workflows are declarations loaded by the runner — there is no standalone
+<code>makac run tests/&lt;suite&gt;/workflow.lua</code>. Run a whole suite by naming it:</p>
+<pre><code class="language-sh">./nvme-check.lua tp4176
+</code></pre>
+<h2 id="exit-codes"><a class="header" href="#exit-codes">Exit codes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Code</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td>Everything selected passed (or <code>--list</code> succeeded).</td></tr>
+<tr><td>1</td><td>A test failed, or a usage error (unknown suite, unknown test, unknown flag, missing flag value).</td></tr>
+<tr><td>2</td><td>Malformed <code>--where</code> expression.</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<p>nvme-check organizes tests into <strong>test suites</strong>: any child directory of
+<code>tests/</code> containing a <code>workflow.lua</code> is a suite.</p>
+<p>A suite describes one or more tests to run and defines the <strong>driver</strong> suited
+to run them (set on the suite, overridable per test). A driver is a <a href="https://jwdevantier.github.io/makac/concepts/actions.html">makac
+action</a>: it
+receives the test’s data and does the work required to actually run the test.
+Three drivers ship with nvme-check:</p>
+<ul>
+<li><a href="#the-base-driver"><code>base</code></a>, where you define the function that runs the
+test;</li>
+<li><a href="#the-libvfn-simple-driver"><code>libvfn-simple</code></a>, which boots an
+architecture-appropriate VM, hot-plugs the declared NVMe device(s),
+compiles the program described by the test, copies it in over SCP and runs
+it;</li>
+<li><a href="#the-qtest-driver"><code>qtest</code></a>, which runs a host-native program that spawns
+QEMU with <code>-accel qtest</code> and drives it over the qtest protocol.</li>
+</ul>
+<p>The <code>nvme-check.lua</code> script itself auto-discovers test suites and can
+enumerate or run tests — and provides a PyTest-inspired <a href="#selecting-tests">tag filtering
+language</a> to run only a subset of tests based
+on how they are tagged.</p>
+<h2 id="major-components"><a class="header" href="#major-components">Major components</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Component</th><th>What it is</th></tr>
+</thead>
+<tbody>
+<tr><td><code>nvme-check.lua</code></td><td>The test runner; discovers test suites (<code>tests/*/workflow.lua</code>), collects tests, filters tests based on provided query arguments and executes (or lists, in case of <code>--list</code>) what matched</td></tr>
+<tr><td><code>tests/&lt;suite&gt;/workflow.lua</code></td><td>Describes the tests to run; each test may individually specify the driver to use (<code>uses</code>) and provides the test data (<code>with</code>) to the driver</td></tr>
+<tr><td><code>testlib/lib/selection.lua</code></td><td>The filtering; turns the collected tests plus the query arguments into the list of (architecture, test) pairs to execute or list</td></tr>
+<tr><td><code>testlib/lib/libvfn_simple.lua</code></td><td>The <code>libvfn-simple</code> driver; boots the architecture’s VM from its snapshot, hot-plugs and binds the declared NVMe devices, builds the test, copies it in, runs it — the exit code is the verdict</td></tr>
+<tr><td><code>testlib/lib/qtest.lua</code> + <code>src/qtest</code></td><td>The <code>qtest</code> driver and its protocol client; runs a host-native test against a <code>-accel qtest</code> QEMU over the qtest protocol</td></tr>
+<tr><td><code>testlib/lib/base.lua</code></td><td>The <code>base</code> driver; calls the test’s <code>run</code> function — a raise is a FAIL, anything else a PASS</td></tr>
+<tr><td><code>testlib/lib/arch.lua</code>, <code>guest.lua</code>, <code>nvme.lua</code>, <code>images.lua</code></td><td>The VM machinery; architecture definitions, base-image builds, <code>guest.boot</code>, QMP device hot-plug and vfio-bind</td></tr>
+<tr><td><code>build.zig</code> + <code>src/</code></td><td>The build setup and shared test library; compiles each test program statically for the guest architecture.<br><br>• <code>src/vfn</code> binds the libvfn C API (conveniences belong in <code>src/vfntest</code>);<br>• <code>src/nvme</code> defines the NVMe spec structures and constants — the closest equivalent to QEMU’s <code>include/block/nvme.h</code>.<br><br>Suites keep vendor-specific deviations and definitions internally</td></tr>
+<tr><td><code>tests/&lt;suite&gt;/batches/*.zig</code></td><td>The test programs themselves; <code>test {}</code> blocks run by zig’s test runner inside the guest against the controller at <code>$NVME_BDF</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="architectures"><a class="header" href="#architectures">Architectures</a></h2>
+<p>Tests run on amd64 (KVM) and s390x (fully emulated): little- and big-endian
+guests executing the same test binaries. NVMe structures are little-endian,
+so the point of the second architecture is flushing out host-endian
+assumptions — which is why all byte-order conversion is localized in
+<code>src/nvme/spec.zig</code>, host-testable and identical for every batch.</p>
+<h2 id="state-on-disk"><a class="header" href="#state-on-disk">State on disk</a></h2>
+<p>Everything generated is local and gitignored:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Path</th><th>Contents</th></tr>
+</thead>
+<tbody>
+<tr><td><code>.makac/vm-images/</code></td><td>Live VM disks (<code>*-live.qcow2</code>), per-batch raw NVMe disks, instance-id files</td></tr>
+<tr><td><code>.makac/qemu/img/</code></td><td>Base image build state and <code>serial.log</code></td></tr>
+<tr><td><code>logs/</code></td><td>Test run logs</td></tr>
+</tbody>
+</table>
+</div>
+<p>Base images are built once per architecture. The live disks are large,
+disposable artifacts — keeping them under the already-gitignored <code>.makac/</code>
+means <code>rm -rf .makac</code> is a complete reset.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="writing-tests"><a class="header" href="#writing-tests">Writing tests</a></h1>
+<h2 id="test-suites"><a class="header" href="#test-suites">Test suites</a></h2>
+<p>A test suite is a directory under <code>tests/</code> containing a <code>workflow.lua</code> —
+<code>tests/tp4176/</code>, for example. That is also all it takes to create one. Suites
+in this repository are named after the TP or spec section they cover; any
+documentation a suite needs (what it specifies, caveats, minimum QEMU
+version, …) goes in a <code>README.md</code> in the same directory.</p>
+<p>The runner discovers suites by <code>workflow.lua</code>; a directory without one is
+skipped, silently.</p>
+<p>The <code>workflow.lua</code> module returns a table with two fields:</p>
+<ul>
+<li><code>uses</code> — which driver runs the suite’s tests. A driver is a makac action;
+see <a href="#test-drivers">Test drivers</a>.</li>
+<li><code>tests</code> — the tests to run (below).</li>
+</ul>
+<h2 id="adding-tests"><a class="header" href="#adding-tests">Adding tests</a></h2>
+<p>Each entry in <code>tests</code> is one test:</p>
+<ul>
+<li><code>name</code> (required) — used in output and filtering.</li>
+<li><code>uses</code> — the driver for this test; overrides the suite-level one.</li>
+<li><code>with</code> — the test data handed to the driver. What goes here is defined by
+the driver: <a href="#the-libvfn-simple-driver"><code>libvfn-simple</code></a> expects a <code>program</code>
+and device parameters, <a href="#the-base-driver"><code>base</code></a> expects a <code>run</code> function.</li>
+<li><code>tags</code> — strings for filtering. The test’s name, its suite and the
+architecture name are implicit. Tag slow tests <code>"slow"</code> so
+<code>--where "not slow"</code> keeps iterating fast.</li>
+<li><code>archs</code> — restrict to specific architectures; defaults to all.</li>
+</ul>
+<p>A minimal suite, using the <code>base</code> driver:</p>
+<pre><code class="language-lua">-- tests/mysuite/workflow.lua
+return {
+  uses = "nvmecheck:base",          -- the driver for every test...
+  tests = {
+    { name = "smoke",
+      with = { run = function(args)
+        -- error("...") fails the test; returning passes it
+      end } },
+
+    { name = "another-check",
+      with = { run = function(args) ... end } },
+
+    { name = "identify",            -- ...unless the test says otherwise
+      uses = "nvmecheck:libvfn-simple",
+      with = { program = "batches/identify.zig",
+               nvme = { drive = "64M", ctrl = {} } } },
+  },
+}
+</code></pre>
+<h2 id="running"><a class="header" href="#running">Running</a></h2>
+<pre><code class="language-sh">./nvme-check.lua mysuite            # the whole suite
+./nvme-check.lua -w identify        # by (implicit) tag
+./nvme-check.lua --list             # enumerate without running
+</code></pre>
+<p>Filtering is tag-based, with the test’s name, suite and architecture name as
+implicit tags — see <a href="#selecting-tests">Selecting tests</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="test-drivers"><a class="header" href="#test-drivers">Test drivers</a></h1>
+<p>A test declares <em>what</em> should run. A <strong>driver</strong> decides <em>how</em> it runs.</p>
+<p>Concretely, a driver is a makac action, and a test’s <code>uses</code> field names it:</p>
+<pre><code class="language-lua">-- tests/&lt;suite&gt;/workflow.lua
+return {
+  uses = "nvmecheck:libvfn-simple",   -- driver for every test in the suite
+  tests = {
+    { name = "identify",              -- runs under the suite's driver
+      tags = { "tp4176" },
+      with = { program = "batches/identify.zig", nvme = { ... } } },
+
+    { name = "smoke", uses = "nvmecheck:base",   -- per-test override
+      with = { run = function(args) ... end } },
+  },
+}
+</code></pre>
+<p><code>uses</code> must be set by the test or by the suite (a test’s own value
+overrides its suite’s). There is no harness-level default: a test with
+neither is a load-time error.</p>
+<h2 id="the-contract"><a class="header" href="#the-contract">The contract</a></h2>
+<p>The harness — <code>nvme-check.lua</code> plus <code>testlib/lib/selection.lua</code> — knows
+exactly four things about a test: <code>name</code>, <code>uses</code>, <code>tags</code>, <code>archs</code>. That is
+all selection ever sees, and all listing ever prints.</p>
+<p>Everything else lives in <code>with</code>, which is <strong>driver-owned</strong>: the harness never
+reads it, with one documented exception — before invoking the driver, the
+runner sets these three fields:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Injected key</th><th>Value</th></tr>
+</thead>
+<tbody>
+<tr><td><code>with.arch</code></td><td>the architecture of this (arch, test) pair</td></tr>
+<tr><td><code>with.suite</code></td><td>the suite the test was declared in</td></tr>
+<tr><td><code>with.name</code></td><td>the test’s name</td></tr>
+</tbody>
+</table>
+</div>
+<p>Pass/fail follows makac’s action convention: the driver raises or returns
+<code>{ err = ... }</code> to FAIL; anything else is a PASS. <code>out</code> may carry whatever
+the driver wants reported (exit code, stdout, …).</p>
+<h2 id="the-stock-drivers"><a class="header" href="#the-stock-drivers">The stock drivers</a></h2>
+<ul>
+<li><a href="#the-libvfn-simple-driver">The <code>libvfn-simple</code> driver</a> — one VM, one test
+binary, exit code: boot the baseline, wire the declared NVMe devices, build
+<ul>
+<li>ship + run.</li>
+</ul>
+</li>
+<li><a href="#the-qtest-driver">The <code>qtest</code> driver</a> — a host-native program spawning
+<code>-accel qtest</code> QEMU and driving it over the qtest protocol; no VM.</li>
+<li><a href="#the-base-driver">The <code>base</code> driver</a> — free reign: the harness supplies
+nothing, the test’s <code>run</code> function does everything (multi-VM, VM-less,
+experiments).</li>
+</ul>
+<p>Drivers are registered like any other action, in
+<code>testlib/makac_package.lua</code> — and nothing is special about the stock ones:
+a driver from another package works untouched (<code>uses = "my-pkg:my-driver"</code>).</p>
+<h2 id="writing-your-own-driver"><a class="header" href="#writing-your-own-driver">Writing your own driver</a></h2>
+<p>A driver is a function <code>run(with) -&gt; StepResult</code>, registered as an action.
+The minimal skeleton:</p>
+<pre><code class="language-lua">local M = {}
+function M.run(with)
+  local arch = assert(with.arch, "arch is runner-injected")
+  local ok, err = pcall(function()
+    -- ... do the thing ...
+  end)
+  if not ok then return { err = tostring(err) } end
+  return { changed = true, out = {} }
+end
+return M
+</code></pre>
+<p>Test actions are deliberately non-idempotent — they always run and return
+<code>changed = true</code>. (Makac’s action idiom leans convergent-infra; nothing in
+<code>step</code> requires it. Caching, where it exists at all, lives inside individual
+actions like <code>qemu:img</code>, not in dispatch.)</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="the-libvfn-simple-driver"><a class="header" href="#the-libvfn-simple-driver">The <code>libvfn-simple</code> driver</a></h1>
+<p><code>uses = "nvmecheck:libvfn-simple"</code>. For each (arch, test) pair it resumes the
+arch’s baseline VM, wires the declared NVMe devices, builds the test binary
+for the guest architecture, copies it into the guest, runs it, and takes the
+exit code as the verdict.</p>
+<p>The test runs inside the guest with the controller bound to <code>vfio-pci</code> —
+unbound from <code>nvme.ko</code>, no kernel NVMe driver in the path. The test binary
+talks to the device directly: composing commands, ringing doorbells, decoding
+completions.</p>
+<h2 id="what-a-run-looks-like"><a class="header" href="#what-a-run-looks-like">What a run looks like</a></h2>
+<p>For one test, per architecture:</p>
+<ol>
+<li>The architecture’s live disk is resumed from its base snapshot
+(<code>guest.boot</code>).</li>
+<li>An NVMe controller is hot-plugged with the declared device parameters,
+backed by a fresh raw disk under <code>.makac/vm-images/</code>.</li>
+<li>The controller is bound to <code>vfio-pci</code> in the guest.</li>
+<li>The test binary, cross-compiled statically for the guest architecture, is
+copied in and executed, reading the controller BDF from <code>NVME_BDF</code>.</li>
+<li>The VM is shut down with a clean QMP quit (<code>ctx.down()</code>).</li>
+</ol>
+<p>The first run per architecture is slow: it downloads a cloud-init-enabled
+base image and boots it once to apply one-time customization, then snapshots
+the running VM. Every test after that resumes from that snapshot — an
+accelerated VM resumes in seconds — and gets a fresh copy of its raw disk.</p>
+<p>To follow the image build while it runs, set <code>MAKAC_IMG_VERBOSE=1</code> or tail
+the serial log:</p>
+<pre><code class="language-sh">tail -f .makac/qemu/img/&lt;image&gt;/serial.log
+</code></pre>
+<pre><code> HOST                                GUEST  (resumed at the baseline snapshot)
+
+ QMP: loadvm                -----&gt;   VM is live in seconds, no boot
+
+ QMP: device_add            -----&gt;   NVMe controller appears on the PCI bus,
+ (declared ctrl params +             backed by a fresh raw disk
+  fresh raw disk)
+
+ ssh: bind script           -----&gt;   controller leaves nvme.ko, opens via
+                                     /dev/vfio; its BDF becomes NVME_BDF
+
+ zig build (static, guest arch)      (nothing on the guest yet)
+
+ scp test binary            -----&gt;   /tmp/&lt;test&gt;
+
+ ssh: NVME_BDF run          -----&gt;   zig test runner drives the controller
+                                     through libvfn: queues, doorbells,
+                                     CQEs, no kernel NVMe driver in between
+                            &lt;-----   stdout, stderr, exit code
+
+ QMP: quit                  -----&gt;   clean shutdown; live-disk writes and the
+                                     raw NVMe disk are discarded
+</code></pre>
+<p>Note where the arrows cross: only QMP and SSH/scp bridge host and guest, and
+the test binary is the only thing that ever touches the device directly.</p>
+<p>Test programs are written in Zig, built with <code>zig build</code>. The deciding factor
+is the toolchain: one command cross-compiles a static musl binary for
+whichever architecture the guest runs — so guests (including the fully
+emulated s390x one) never compile anything. The driver is indifferent to the
+language; a statically linked C binary would work the same way.</p>
+<h2 id="with-shape"><a class="header" href="#with-shape"><code>with</code> shape</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Type</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>program</code></td><td>string (required)</td><td>Zig test root, relative to <code>tests/&lt;suite&gt;/</code></td></tr>
+<tr><td><code>nvme</code></td><td>spec, spec[], or <code>fun(ctx, with): string[]</code></td><td>device setup (see below)</td></tr>
+<tr><td><code>pre_test</code></td><td><code>fun(ctx, with)</code></td><td>after devices are added and bound, before the program runs</td></tr>
+<tr><td><code>post_test</code></td><td><code>fun(ctx, with, result)</code></td><td>always runs (finally), even on failure — collect artifacts, clean up</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>nvme</code> is declarative: a single cluster spec
+(<code>{ drive = "64M", ctrl = { ... } }</code>), a list of them (multi-controller
+tests), or a function that adds/binds its own devices via <code>ctx</code> and returns
+the BDFs. A bare size in <code>drive</code> resolves to a fresh per-run raw disk at
+device-add time.</p>
+<h2 id="writing-test-programs"><a class="header" href="#writing-test-programs">Writing test programs</a></h2>
+<p>A batch’s <code>program</code> is an ordinary Zig test root under
+<code>tests/&lt;suite&gt;/batches/</code>; its <code>test {}</code> blocks run in the guest against the
+controller. The driver sets the <code>NVME_BDF</code> environment variable to the PCI
+BDF of the freshly-bound controller inside the guest, and the test binary
+reads it to find its device. Never set it yourself:</p>
+<pre><code class="language-zig">const common = @import("common");
+
+test "identify shows feature support" {
+    const ctrl = try common.ctrl();  -- opens the controller from NVME_BDF
+    -- build a command, submit, assert on the decoded CQE ...
+}
+</code></pre>
+<p>A suite may have as many batches as it needs — each test entry points at its
+own program. Nothing scans <code>batches/</code>; a program file that no entry names
+never builds or runs.</p>
+<p>If batches need shared code — opening the controller from <code>NVME_BDF</code>, common
+teardown — put it in a <code>common.zig</code> in the suite directory: <code>build.zig</code> then
+exposes it to every batch as the <code>common</code> import (only if the file exists),
+and <code>common.zig</code> re-exports further suite files as needed, e.g.
+<code>pub const spec = @import("spec.zig");</code>.</p>
+<p>Where definitions live:</p>
+<ul>
+<li>Structures, constants and decoders that belong to the NVMe spec at large
+belong in <code>src/nvme</code> — shared by all suites, host-testable on both
+architectures. (See <a href="#major-components">Architecture</a>.)</li>
+<li>Non-standard or vendor-specific material — OCP commands, suite-specific
+helpers — stays in code local to the suite.</li>
+</ul>
+<p>The only build configuration a suite can need: if its <code>spec.zig</code> has
+host-side unit tests, add it to <code>test_roots</code> in <code>build.zig</code>. Batch programs
+themselves are self-contained and referenced by path from the workflow.</p>
+<h2 id="example"><a class="header" href="#example">Example</a></h2>
+<p>A typical declaration (from <code>tests/tp4176/workflow.lua</code>):</p>
+<pre><code class="language-lua">{ name = "feature", tags = { "tp4176", "fast" },
+  with = {
+    program = "batches/feature.zig",
+    nvme = { drive = "64M",
+             ctrl = { serial = "deadbeef", msi = false, iocqes = 32, iosqes = 64 } },
+  } }
+</code></pre>
+<h2 id="batches"><a class="header" href="#batches">Batches</a></h2>
+<p>In this driver, what the harness calls a test is executed as a <strong>batch</strong>: one
+program, its NVMe device(s), one VM session — from fresh snapshot to clean
+shutdown.</p>
+<p>The batch is the isolation unit: every batch runs in a VM resumed fresh from
+the base snapshot, against a fresh per-batch raw disk. Resume is cheaper than
+boot but not free (s390x: ~25 s), so the granularity is a tradeoff the test
+writer makes — tests that cannot disturb each other (log-page inspections)
+belong in one batch; a test that might wedge the controller or scribble its
+disk does not. A batch must neither depend on, nor worry about, state from
+any other batch.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="the-qtest-driver"><a class="header" href="#the-qtest-driver">The <code>qtest</code> driver</a></h1>
+<p>Runs a Zig program directly on the host, which spawns a headless QEMU instance
+with <code>-accel qtest</code> and drives it over a socket speaking the qtest protocol.
+No guest code or VM image is required.</p>
+<h2 id="using-the-qtest-driver"><a class="header" href="#using-the-qtest-driver">Using the qtest driver</a></h2>
+<p>This example assumes we are creating a new test-suite, possibly exercising
+a new version of the specification or a new technical-proposal (TP).</p>
+<p>To start, we create <code>./tests/foo</code> and write a <code>workflow.lua</code> file within,
+which returns a data-structure, describing the tests provided by this workflow:</p>
+<pre><code class="language-lua">
+return {
+  -- driver used for all test-cases, unless test specifically
+  -- overrides it.
+  uses = "nvmecheck:qtest",
+  tests = {
+    {
+      -- a descriptive name
+      name = "bringup-datapath",
+      -- tag as desired, should generally add 'qtest' and 'fast'
+      tags = { "qtest", "fast" },
+      -- mark architecture(s) appropriate for this test
+      archs = { "amd64" },
+      with = {
+        -- test program to run, relative to `./tests/&lt;suite&gt;`
+        program = "batches/bringup_datapath.zig"
+      }
+    },
+  }
+}
+</code></pre>
+<h2 id="example-program"><a class="header" href="#example-program">Example Program</a></h2>
+<p>A qtest-lane program is a host-native Zig test binary that spawns its own
+QEMU; it needs nothing from a suite-local helper. The driver exports
+<code>NVME_QTEST_QEMU</code> / <code>NVME_QTEST_MACHINE</code>, <code>qtest.launch</code> reads them and supplies
+the machine base argv, and the program supplies only the device-side argv
+(<code>-drive</code>, <code>-device</code>, …):</p>
+<pre><code class="language-zig">const std = @import("std");
+const qtest = @import("qtest");
+
+// kill the spawned QEMU if an expect fails
+pub const panic = std.debug.FullPanic(qtest.panicHook);
+
+/// The -device argv below places the controller here (bus 0, dev 4, fn 0).
+const devfn: qtest.pci.ConfigAddr = .{ .bus = 0, .dev = 4, .func = 0 };
+/// BAR0 (16 KiB), which we assign in the low PCI hole — no BIOS under qtest.
+const BAR0: u64 = 0xF010_0000;
+
+test "reg-read" {
+    const s = try qtest.launch(std.heap.smp_allocator, &amp;.{
+        "-drive",  "id=drv0,if=none,file=null-co://,file.read-zeroes=on,format=raw",
+        "-device", "nvme,addr=04.0,drive=drv0,serial=foo",
+    });
+    defer s.deinit();
+
+    try qtest.pci.enable(s, devfn);
+    try qtest.pci.assignBar64(s, devfn, 0, BAR0);
+
+    const cap = try s.read(u64, BAR0 + 0x00);
+    try std.testing.expectEqual(@as(u64, 0x7ff), cap &amp; 0xffff);
+}
+</code></pre>
+<p>Note that the exit code determines success or failure, and that Zig returns
+a non-zero exit code in case one or more tests are failing. In case a test
+fails, the captured test output (stdout) is also printed.</p>
+<p>Generally, test programs should use a separate <code>test "name" {}</code> block per
+test and use the <code>std.testing.*</code> functions for assertions.</p>
+<p>Finally, note <code>pub const panic = ...</code> — this ensures that the QEMU process
+is properly killed if the program encounters a panic.</p>
+<h2 id="the-client-api"><a class="header" href="#the-client-api">The client API</a></h2>
+<p>The client lives in <code>src/qtest</code>, imported as <code>qtest</code>. It speaks QEMU’s
+line-based qtest protocol, but you don’t talk to the protocol directly:
+<code>qtest.launch</code> returns a <code>*Session</code> — a live connection to the spawned machine —
+and you drive the machine through the session’s methods. The session owns the
+qtest socket, a QMP monitor socket, and the machine facts (including a
+guest-memory allocator); <code>deinit</code> quits QEMU and cleans up:</p>
+<pre><code class="language-zig">const s = try qtest.launch(std.heap.smp_allocator, extra_argv);
+defer s.deinit();
+</code></pre>
+<p>Each request gets exactly one reply. A <code>FAIL</code>/<code>ERR</code> reply — or a malformed
+one — becomes <code>error.Protocol</code>; a reply that never arrives becomes
+<code>error.Timeout</code>. Asynchronous <code>IRQ</code> lines may interleave and are absorbed
+rather than handed back.</p>
+<h3 id="memory"><a class="header" href="#memory">Memory</a></h3>
+<p>Guest memory is addressed by guest-physical address (<code>u64</code>). Single values:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Call</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>read(T, addr)</code></td><td>read one value of type <code>T</code> — <code>u8</code>, <code>u16</code>, <code>u32</code> or <code>u64</code></td></tr>
+<tr><td><code>write(T, addr, val)</code></td><td>write one value of type <code>T</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The width is the type, not a suffix in the name: <code>read(u32, addr)</code> is a 32-bit
+read.</p>
+<p>Larger buffers (queues, PRP lists, command structures) use the bulk calls,
+which copy between host memory and guest memory:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Call</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>memRead(addr, dest)</code> / <code>memWrite(addr, source)</code></td><td>bulk copy, hex on the wire</td></tr>
+<tr><td><code>memReadB64(addr, dest)</code> / <code>memWriteB64(addr, source)</code></td><td>bulk copy, base64 on the wire (cheaper for large transfers)</td></tr>
+<tr><td><code>memset(addr, size, pattern)</code></td><td>fill guest memory with a byte</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>NOTE:</strong> <code>dest</code> and <code>source</code> are Zig slices, so they carry their own length: <code>dest.len</code>
+is how many bytes to read, <code>source.len</code> how many to write.</p>
+<h3 id="registers"><a class="header" href="#registers">Registers</a></h3>
+<p>Device registers are memory-mapped: they sit at the device’s BAR addresses and
+are read and written with the same calls as any other memory —
+<code>read(u32, bar + offset)</code>, <code>write(u32, bar + offset, val)</code>. (See I/O ports for
+enabling a device and assigning its BARs.)</p>
+<h3 id="allocating-guest-memory"><a class="header" href="#allocating-guest-memory">Allocating guest memory</a></h3>
+<p>The machine is assigned a chunk of memory. For convenience, use the provided
+bump allocator to “reserve” guest memory. Use it for anything the device will
+DMA to or from: queues, PRP lists, data buffers etc.</p>
+<pre><code class="language-zig">const gmem = s.guestMem();
+const asq = try gmem.alloc(4096, 4096);       // page-aligned address
+const prp = try gmem.allocFor([4096]u8, 1);   // space for n items of T
+</code></pre>
+<h3 id="io-ports"><a class="header" href="#io-ports">I/O ports</a></h3>
+<p>x86 has a second address space, I/O ports, reached with <code>in32(port)</code> and
+<code>out32(port, val)</code> (32-bit). PCI configuration rides on it: <code>qtest.pci.enable(s, a)</code> and <code>qtest.pci.assignBar64(s, a, bar, addr)</code> — as in the example above, a
+device’s registers are unreachable until its BARs are assigned.</p>
+<h3 id="time"><a class="header" href="#time">Time</a></h3>
+<p><code>clockStep(ns)</code> advances the emulated clock; under <code>-accel qtest</code>, time only
+moves when you tell it to.</p>
+<h3 id="interrupts"><a class="header" href="#interrupts">Interrupts</a></h3>
+<p><code>irqLevel(n)</code> returns the last level seen for IRQ <code>n</code> — <code>true</code> raised, <code>false</code>
+lowered — or <code>null</code> if it has never changed. Level changes arrive
+asynchronously and are cached as the session reads.</p>
+<h3 id="qmp"><a class="header" href="#qmp">QMP</a></h3>
+<p><code>qmpExecute(name, args_json)</code> sends one QMP command over its own socket and
+returns the raw JSON reply, skipping events; <code>args_json</code> is the command’s
+<code>"arguments"</code> value, or <code>null</code>. Most tests don’t need it.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="the-base-driver"><a class="header" href="#the-base-driver">The <code>base</code> driver</a></h1>
+<p><code>uses = "nvmecheck:base"</code>. The base driver runs a Lua function of your
+choosing and imposes no workflow by design: the harness contributes selection
+and the pass/fail convention, the rest is the <code>run</code> function’s business. It
+is for one-off tests that still belong in the catalogue — a lint pass over
+the QEMU code, self-tests and lint checks, running QEMU’s existing NVMe
+qtest or something entirely different.</p>
+<h2 id="with-shape-1"><a class="header" href="#with-shape-1"><code>with</code> shape</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Type</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>run</code></td><td><code>fun(args)</code> (required)</td><td>the test itself; raise to FAIL, return to PASS</td></tr>
+<tr><td><code>args</code></td><td>any</td><td>freeform payload handed to <code>run</code> as <code>args.args</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>run</code> receives one table: <code>arch</code>, <code>suite</code> and <code>name</code> (set by the runner
+<a href="#the-contract">before the driver is called</a>), plus the test’s
+own <code>args</code> from <code>with</code>.</p>
+<h2 id="example-reimplementing-the-vfio-test-flow"><a class="header" href="#example-reimplementing-the-vfio-test-flow">Example: reimplementing the vfio test flow</a></h2>
+<p>The pieces the stock drivers are built from are usable directly — enough to
+rebuild the whole vfio flow in a test body (<code>libvfn-simple</code> is essentially
+this plus its <code>pre_test</code>/<code>post_test</code> hooks):</p>
+<pre><code class="language-lua">{ name = "diy-identify", uses = "nvmecheck:base",
+  with = {
+    run = function(args)
+      local guest = require("pkgs/nvmecheck/guest")
+      local join  = require("path").join
+
+      -- machine up: ensure image, spawn, loadvm baseline snapshot, ssh up
+      local ctx = guest.boot(args.arch)
+
+      -- device: fresh drive, QMP-hotplug controller, unbind nvme.ko -&gt; BDF
+      local bdf = ctx.add_nvme {
+        drive = "64M",                          -- -&gt; fresh raw file, device_add-time
+        ctrl  = { serial = "deadbeef", msi = false },
+      }.out.bdfs[1]
+      ctx.bind_vfio(bdf)
+
+      -- compile for the guest (static musl test binary)
+      local bin = step {
+        uses = "nvmecheck:build",
+        with = { arch = args.arch,
+                 root = join("tests", args.suite, "batches/identify.zig") },
+      }.out.bin
+
+      -- ship + run + observe
+      ctx.put(bin, "/tmp/x")
+      local res = ctx.sh("/tmp/x", { env = { NVME_BDF = bdf } })
+
+      ctx.down()
+      if res.code ~= 0 then error(res.stderr) end
+    end,
+  } }
+</code></pre>
+<p><code>guest.boot(arch, extra?)</code> resumes the arch’s baseline VM and returns the
+guest context (<code>sh</code>, <code>put</code>, <code>add_nvme</code>, <code>bind_vfio</code>, <code>down</code>, …): see
+<a href="#architecture">Architecture</a> for the components underneath.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="developer-notes"><a class="header" href="#developer-notes">Developer notes</a></h1>
+<h2 id="unit-tests"><a class="header" href="#unit-tests">Unit tests</a></h2>
+<p>This library has some unit tests, some testing aspects of the <a href="https://github.com/SamsungDS/libvfn">LibVFN</a>
+binding, others testing utility code shared across actual device tests.
+To run the tests:</p>
+<pre><code class="language-sh">zig build test --summary all
+</code></pre>
+<p>To add additional sets of tests, add your file(s) to <code>const test_roots</code> in
+<code>build.zig</code></p>
+<p>A special case: the runner’s <code>-w/--where</code> flag (see the <a href="#user-guide">User guide</a>)
+takes a boolean tag expression for test selection — <code>aer or feature</code>,
+<code>(aer or feature) and not slow</code> — and that little expression language is
+implemented as a standalone Lua module, <code>testlib/lib/tagexpr.lua</code>. Being Lua,
+<code>zig build test</code> cannot see it, so it has its own unit suite, which doubles
+as the reference for the full grammar:</p>
+<pre><code class="language-sh">makac run testlib/tests/tagexpr_test.lua
+</code></pre>
+<h2 id="building-against-a-local-libvfn"><a class="header" href="#building-against-a-local-libvfn">Building against a local libvfn</a></h2>
+<p>The default libvfn is the pinned <code>build.zig.zon</code> dependency, a fork
+(<code>jwdevantier/libvfn</code>) carrying upstream plus the s390x and big-endian fixes,
+hash-verified by Zig.</p>
+<p>To develop against a local checkout instead, point the build at it. For a host
+build:</p>
+<pre><code class="language-sh">zig build test -Dlibvfn-src=~/repos/libvfn
+</code></pre>
+<p>To make the harness use it for every batch build, set it in the config file:</p>
+<pre><code class="language-lua">return {
+  build = { libvfn_src = "/home/me/repos/libvfn" },
+}
+</code></pre>
+<p><code>build.zig</code> copies the same tree it compiles to <code>zig-out/libvfn-src</code>, so that
+path always matches what was built, whether it came from the pinned dependency
+or the override.</p>
+<p>The promotion path for a change is: hack locally with <code>-Dlibvfn-src</code>, push to
+the fork, then bump the SHA and hash in <code>build.zig.zon</code> via
+<code>zig fetch &lt;archive-url&gt;</code> so everyone else picks it up.</p>
+<h2 id="writing-tests-in-c-a-sketch"><a class="header" href="#writing-tests-in-c-a-sketch">Writing tests in C? (a sketch)</a></h2>
+<p>The test batch binaries are Zig programs, but libvfn is a C library, and nothing
+in nvme-tests outright prevents writing tests in C.
+<code>./src/probe.c</code> was translated from <code>./src/probe.zig</code> and compiled using the Zig
+toolchain like so:</p>
+<pre><code class="language-sh">zig build libvfn-src   # materialize the fetched/overridden tree at zig-out/libvfn-src
+zig cc -c src/probe.c -o /tmp/probe.o \
+  -Izig-out/libvfn-src/include -Izig-out/libvfn-src/src \
+  -Izig-out/libvfn-src/ccan -Ivendor
+</code></pre>
+<p>If deemed valuable, then the <code>nvmecheck:libvfn-simple</code> driver (or the
+<code>nvmecheck:build</code> action underneath it) could be extended to detect if the
+test program has the <code>.c</code> extension, and if so, compile programs as shown
+above. The cost would be maintaining data-structures in two languages,
+however.</p>
+<h2 id="building-the-book"><a class="header" href="#building-the-book">Building the book</a></h2>
+<pre><code class="language-sh">nix develop .#site -c mdbook serve site --port 3000
+</code></pre>
+<p>Then open <a href="http://localhost:3000">http://localhost:3000</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
+<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<h1 id="references"><a class="header" href="#references">References</a></h1>
+<p>This project is a payload on top of two upstream projects. Their own
+documentation is the reference for everything they provide, and it is where you
+should look when a workflow uses something this book does not explain.</p>
+<h2 id="makac"><a class="header" href="#makac">makac</a></h2>
+<p><a href="https://jwdevantier.github.io/makac/">https://jwdevantier.github.io/makac/</a></p>
+<p>The orchestrator that builds images, boots VMs and runs the suites. Its
+documentation covers the full Lua API and every concept makac introduces —
+workflows, steps, actions, targets, facts, packages, fetchers, the project
+directory, and the <code>makac</code> CLI. Start here when you need to know what a
+<code>step { ... }</code> may contain, how <code>makac_project.lua</code> is resolved, or how
+selection and fetching work.</p>
+<h2 id="makacqemu"><a class="header" href="#makacqemu">makac.qemu</a></h2>
+<p><a href="https://jwdevantier.github.io/makac.qemu/">https://jwdevantier.github.io/makac.qemu/</a></p>
+<p>The QEMU package, wired into this project as the <code>qemu</code> alias (see
+<a href="#installation">Installation</a>). It provides every QEMU-specific action and
+documents each one — building an image (<code>qemu:img</code>), booting, resuming and
+snapshotting a VM (<code>qemu:vm</code>, <code>qemu:loadvm</code>, <code>qemu:savevm</code>), probing a running
+VM (<code>qemu:probe</code>), and driving QMP. Reach for it when you are reading or
+writing a <code>workflow.lua</code> and need the exact <code>with</code> table an action expects.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-f2d92f37.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
