@@ -607,10 +607,11 @@ test "admin Identify Namespace Identification Descriptor list" {
     while (off + 4 <= b.len) {
         const nidt = b[off];
         const nidl = b[off + 1];
-        if (nidt == 0 or nidl == 0) {
+        if (nidl == 0) {
             terminated = true;
             break;
         }
+
         const want: usize = switch (nidt) {
             1 => 8, // EUI64
             2 => 16, // NGUID
