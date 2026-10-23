@@ -9,10 +9,13 @@
 -- plain host-side checks.
 --
 -- with = {
---   run  = fun(args: { arch: string, suite: string, name: string, args: any }),
+--   run  = fun(args: { params: table, case: string, suite: string, name: string, args: any }),
 --   args = <freeform, driver-owned; handed to run as args.args>,
---   arch/suite/name = <injected by the runner>,
+--   params/suite/name/case = <injected by the runner>,
 -- }
+--
+-- `params` is the concrete case's parameter table (params.arch, ...); `case` is
+-- the concrete case label ('inspect[arch=s390x]') and `name` the base name.
 
 local M = {}
 
@@ -22,7 +25,8 @@ function M.run(with)
   assert(type(with) == "table", "nvmecheck:base: 'with' table is required")
   local fn = assert(with.run, "nvmecheck:base: a 'run' function is required")
   local ok, res = pcall(fn, {
-    arch = with.arch,
+    params = with.params,
+    case = with.case,
     suite = with.suite,
     name = with.name,
     args = with.args,

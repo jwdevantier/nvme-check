@@ -1,12 +1,12 @@
 <!-- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier -->
 <!-- SPDX-License-Identifier: BSD-2-Clause -->
 
-# The `libvfn-simple` driver
+# The `qemu-vfio` driver
 
-`uses = "nvmecheck:libvfn-simple"`. For each (arch, test) pair it resumes the
-arch's baseline VM, wires the declared NVMe devices, builds the test binary
-for the guest architecture, copies it into the guest, runs it, and takes the
-exit code as the verdict.
+`uses = "nvmecheck:qemu-vfio"`. For each concrete test-case it resumes the
+baseline VM of the test-case's `arch` parameter, wires the declared NVMe
+devices, builds the test binary for the guest architecture, copies it into the
+guest and runs it. Program exit code determines success.
 
 The test runs inside the guest with the controller bound to `vfio-pci` —
 unbound from `nvme.ko`, no kernel NVMe driver in the path. The test binary
@@ -15,7 +15,7 @@ completions.
 
 ## What a run looks like
 
-For one test, per architecture:
+For one test-case:
 
 1. The architecture's live disk is resumed from its base snapshot
    (`guest.boot`).
@@ -89,11 +89,11 @@ device-add time.
 
 ## Writing test programs
 
-A batch's `program` is an ordinary Zig test root under
+A test's `with.program` is an ordinary Zig test root under
 `tests/<suite>/batches/`; its `test {}` blocks run in the guest against the
-controller. The driver sets the `NVME_BDF` environment variable to the PCI
-BDF of the freshly-bound controller inside the guest, and the test binary
-reads it to find its device. Never set it yourself:
+controller, once per test-case. The driver sets the `NVME_BDF` environment
+variable to the PCI BDF of the freshly-bound controller inside the guest, and
+the test binary reads it to find its device. Never set it yourself:
 
 ```zig
 const common = @import("common");
@@ -104,14 +104,14 @@ test "identify shows feature support" {
 }
 ```
 
-A suite may have as many batches as it needs — each test entry points at its
-own program. Nothing scans `batches/`; a program file that no entry names
-never builds or runs.
+A suite may have as many test programs as it needs — each test entry points
+at its own program. Nothing scans `batches/`; a program file that no entry
+names never builds or runs.
 
-If batches need shared code — opening the controller from `NVME_BDF`, common
-teardown — put it in a `common.zig` in the suite directory: `build.zig` then
-exposes it to every batch as the `common` import (only if the file exists),
-and `common.zig` re-exports further suite files as needed, e.g.
+If test programs need shared code — opening the controller from `NVME_BDF`,
+common teardown — put it in a `common.zig` in the suite directory: `build.zig`
+then exposes it to every program as the `common` import (only if the file
+exists), and `common.zig` re-exports further suite files as needed, e.g.
 `pub const spec = @import("spec.zig");`.
 
 Where definitions live:
@@ -123,7 +123,7 @@ Where definitions live:
   helpers — stays in code local to the suite.
 
 The only build configuration a suite can need: if its `spec.zig` has
-host-side unit tests, add it to `test_roots` in `build.zig`. Batch programs
+host-side unit tests, add it to `test_roots` in `build.zig`. Test programs
 themselves are self-contained and referenced by path from the workflow.
 
 ## Example
@@ -139,16 +139,18 @@ A typical declaration (from `tests/tp4176/workflow.lua`):
   } }
 ```
 
-## Batches
+## Test-cases and test programs
 
-In this driver, what the harness calls a test is executed as a **batch**: one
-program, its NVMe device(s), one VM session — from fresh snapshot to clean
-shutdown.
+A test's `with.program` is its **test program**: one Zig test root, built
+once and then run once per test-case. Every test-case gets its own VM session,
+resumed fresh from the base snapshot, against its own raw disk — so the
+*test-case* is the isolation unit, and the two test-cases of a test are as
+independent as two separate tests. Splitting work across tests costs an extra
+workflow entry; it does not buy isolation.
 
-The batch is the isolation unit: every batch runs in a VM resumed fresh from
-the base snapshot, against a fresh per-batch raw disk. Resume is cheaper than
-boot but not free (s390x: ~25 s), so the granularity is a tradeoff the test
-writer makes — tests that cannot disturb each other (log-page inspections)
-belong in one batch; a test that might wedge the controller or scribble its
-disk does not. A batch must neither depend on, nor worry about, state from
-any other batch.
+Resume is cheaper than boot but not free (s390x: ~25 s), the more test programs,
+the more test cases, the more times the VM needs to be resumed. The granularity
+is a trade-off made by the test writer.
+Tests that cannot disturb one another should be grouped for speed of execution.
+Tests that might render the controller unusable should be isolated to prevent
+test interference.

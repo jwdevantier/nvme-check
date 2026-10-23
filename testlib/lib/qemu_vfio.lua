@@ -1,5 +1,5 @@
--- testlib/lib/libvfn_simple.lua
--- The `nvmecheck:libvfn-simple` action: the single-VM libvfn test driver.
+-- testlib/lib/qemu_vfio.lua
+-- The `nvmecheck:qemu-vfio` action: the single-VM libvfn test driver.
 --
 -- Lifecycle (formerly batch.run, see DESIGN.md §5):
 --
@@ -12,8 +12,12 @@
 --   nvme?     = NvmeSpec | NvmeSpec[] | fun(ctx, with): string[],
 --   pre_test?  = fun(ctx, with),
 --   post_test? = fun(ctx, with, result),  -- finally: runs even on failure
---   arch/suite/name = <injected by the runner>,
+--   params/suite/name/case = <injected by the runner>,
 -- }
+--
+-- `params` is the concrete case's parameter table (params.arch, ...): the
+-- runner does not interpret it, so the driver is where `arch` is read and a
+-- case that does not declare it is an error.
 --
 -- `nvme` is declarative: a cluster spec ({ drive = "64M", ctrl = {...}, ... }),
 -- a list of them, or a function(ctx, with) that adds/binds its own devices and
@@ -133,10 +137,11 @@ end
 ---@param with table
 ---@return table
 function M.run(with)
-  assert(type(with) == "table", "nvmecheck:libvfn-simple: 'with' table is required")
-  local arch = assert(with.arch, "nvmecheck:libvfn-simple: 'arch' (runner-injected) is required")
-  local suite = assert(with.suite, "nvmecheck:libvfn-simple: 'suite' (runner-injected) is required")
-  local program = assert(with.program, "nvmecheck:libvfn-simple: 'program' is required")
+  assert(type(with) == "table", "nvmecheck:qemu-vfio: 'with' table is required")
+  local params = assert(with.params, "nvmecheck:qemu-vfio: 'with.params' (runner-injected) is required")
+  local arch = assert(params.arch, "nvmecheck:qemu-vfio: 'params.arch' is required")
+  local suite = assert(with.suite, "nvmecheck:qemu-vfio: 'suite' (runner-injected) is required")
+  local program = assert(with.program, "nvmecheck:qemu-vfio: 'program' is required")
 
   local ctx = nil ---@type GuestCtx?
   local result = { bdfs = {} } ---@type table

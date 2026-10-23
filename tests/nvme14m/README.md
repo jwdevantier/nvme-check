@@ -20,19 +20,19 @@ allowances are not the ones tested here.
 
 ## Isolation: one program per concern
 
-The suite is six batch programs, each registered as its own `workflow.lua`
+The suite is six test programs, each registered as its own `workflow.lua`
 entry. `workflow.lua` entry names are the `:` filter keys
-(`./nvme-check.lua nvme14m:inspect -a amd64`). **Each entry is one controller
-session** (`common.ctrl()` → libvfn `nvme_init`: reset → admin queue → enable
-→ Identify); that session is the isolation mechanism: destructive work
-(feature writes, I/O-queue lifecycle, reset, shutdown) cannot contaminate
-read-only inspection or the queue-less feature checks.
+(`./nvme-check.lua nvme14m:inspect -w 'arch=amd64'`). **Each test-case is one
+controller session** (`common.ctrl()` → libvfn `nvme_init`: reset → admin
+queue → enable → Identify); that session is the isolation mechanism:
+destructive work (feature writes, I/O-queue lifecycle, reset, shutdown)
+cannot contaminate read-only inspection or the queue-less feature checks.
 
 Within a program, `test {}` blocks run in declaration order. Tests are kept
 small and split by concern so that a QEMU non-conformance fails only the
 narrowest possible test.
 
-## Batches
+## Test programs
 
 ### `inspect` — read-only transport, Identify and logs
 
@@ -103,20 +103,20 @@ with a Controller Reset between them to resume.
 # Host-only spec unit tests (spec.zig; no device, no makac) — always green.
 zig build test
 
-# The whole suite (all six batches), architecture pinned to amd64.
-./nvme-check.lua nvme14m -a amd64
+# The whole suite (every test-case), architecture pinned to amd64.
+./nvme-check.lua nvme14m -w 'arch=amd64'
 
-# One batch, by workflow.lua entry name.
-./nvme-check.lua nvme14m:inspect -a amd64
+# One test, by workflow.lua entry name.
+./nvme-check.lua nvme14m:inspect -w 'arch=amd64'
 
-# Acceptance: runs the host tests and all six batches, and exits 0 iff every
-# failing Zig test is on the known-QEMU-failure allow-list.
+# Acceptance: runs the host tests and all six test programs, and exits 0 iff
+# every failing Zig test is on the known-QEMU-failure allow-list.
 tests/nvme14m/check-expected.sh
 ```
 
 `check-expected.sh` also accepts `--parse-only FILE` to re-check an already
-captured combined log. The harness selects the controller; the batch reads its
-BDF from `$NVME_BDF` (default `0000:02:00.0`).
+captured combined log. The harness selects the controller; the test program
+reads its BDF from `$NVME_BDF` (default `0000:02:00.0`).
 
 ## Known gaps (QEMU is not conformant)
 
@@ -127,12 +127,12 @@ weakened; instead the failing Zig test name is recorded, with a 1.4(c)
 citation and one-line reason, in
 [`known-qemu-failures.txt`](known-qemu-failures.txt).
 
-`check-expected.sh` is the gate: it runs `zig build test` plus every batch and
-exits 0 iff **no test fails that is not on the allow-list**. The allow-list
-starts empty and grows only as strict checks land. The current entries are the
-QEMU non-conformances introduced by this loop — see the file for the
-authoritative list. A failure not on the list is a bug in the suite or a new
-regression, not a device tolerance.
+`check-expected.sh` is the gate: it runs `zig build test` plus every test
+program and exits 0 iff **no test fails that is not on the allow-list**. The
+allow-list starts empty and grows only as strict checks land. The current
+entries are the QEMU non-conformances introduced by this loop — see the file
+for the authoritative list. A failure not on the list is a bug in the suite
+or a new regression, not a device tolerance.
 
 ## Version policy (decision B)
 

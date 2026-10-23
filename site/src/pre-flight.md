@@ -12,7 +12,7 @@ makac doctor nvmecheck    # just this project's package
 ```
 
 It checks the resolved configuration, the configured QEMU binaries, that
-`qemu-img` is on `PATH`, the batch-build toolchain (your Zig, or Nix), and
+`qemu-img` is on `PATH`, the build toolchain (your Zig, or Nix), and
 that the harness modules load.
 `makac.qemu` adds its own checks, including `genisoimage`. If the report is
 clean, things should work; a later failure caused by a missing tool is a bug in

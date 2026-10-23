@@ -14,7 +14,7 @@ Three drivers ship with nvme-check:
 
 - [`base`](drivers/base.md), where you define the function that runs the
   test;
-- [`libvfn-simple`](drivers/libvfn-simple.md), which boots an
+- [`qemu-vfio`](drivers/qemu-vfio.md), which boots an
   architecture-appropriate VM, hot-plugs the declared NVMe device(s),
   compiles the program described by the test, copies it in over SCP and runs
   it;
@@ -23,8 +23,8 @@ Three drivers ship with nvme-check:
 
 The `nvme-check.lua` script itself auto-discovers test suites and can
 enumerate or run tests — and provides a PyTest-inspired [tag filtering
-language](user-guide.md#selecting-tests) to run only a subset of tests based
-on how they are tagged.
+language](user-guide.md#selecting-test-cases) to run only a subset of tests
+based on how they are tagged.
 
 ## Major components
 
@@ -32,8 +32,8 @@ on how they are tagged.
 |---|---|
 | `nvme-check.lua` | The test runner; discovers test suites (`tests/*/workflow.lua`), collects tests, filters tests based on provided query arguments and executes (or lists, in case of `--list`) what matched |
 | `tests/<suite>/workflow.lua` | Describes the tests to run; each test may individually specify the driver to use (`uses`) and provides the test data (`with`) to the driver |
-| `testlib/lib/selection.lua` | The filtering; turns the collected tests plus the query arguments into the list of (architecture, test) pairs to execute or list |
-| `testlib/lib/libvfn_simple.lua` | The `libvfn-simple` driver; boots the architecture's VM from its snapshot, hot-plugs and binds the declared NVMe devices, builds the test, copies it in, runs it — the exit code is the verdict |
+| `testlib/lib/selection.lua` | The filtering; turns the collected tests plus the query arguments into the list of concrete test-cases to execute or list |
+| `testlib/lib/qemu_vfio.lua` | The `qemu-vfio` driver; boots the architecture's VM from its snapshot, hot-plugs and binds the declared NVMe devices, builds the test, copies it in, runs it — the exit code determines success |
 | `testlib/lib/qtest.lua` + `src/qtest` | The `qtest` driver and its protocol client; runs a host-native test against a `-accel qtest` QEMU over the qtest protocol |
 | `testlib/lib/base.lua` | The `base` driver; calls the test's `run` function — a raise is a FAIL, anything else a PASS |
 | `testlib/lib/arch.lua`, `guest.lua`, `nvme.lua`, `images.lua` | The VM machinery; architecture definitions, base-image builds, `guest.boot`, QMP device hot-plug and vfio-bind |
@@ -46,7 +46,7 @@ Tests run on amd64 (KVM) and s390x (fully emulated): little- and big-endian
 guests executing the same test binaries. NVMe structures are little-endian,
 so the point of the second architecture is flushing out host-endian
 assumptions — which is why all byte-order conversion is localized in
-`src/nvme/spec.zig`, host-testable and identical for every batch.
+`src/nvme/spec.zig`, host-testable and identical for every test program.
 
 ## State on disk
 
@@ -54,7 +54,7 @@ Everything generated is local and gitignored:
 
 | Path | Contents |
 |---|---|
-| `.makac/vm-images/` | Live VM disks (`*-live.qcow2`), per-batch raw NVMe disks, instance-id files |
+| `.makac/vm-images/` | Live VM disks (`*-live.qcow2`), per-test-case raw NVMe disks, instance-id files |
 | `.makac/qemu/img/` | Base image build state and `serial.log` |
 | `logs/` | Test run logs |
 

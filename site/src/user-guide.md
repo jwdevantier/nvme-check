@@ -2,86 +2,101 @@
 <!-- SPDX-License-Identifier: BSD-2-Clause -->
 
 # User guide
+
 `./nvme-check.lua` is the entry point. It discovers the suites (any directory
 under `tests/` containing a `workflow.lua`), applies your selection, and runs
-the selected batches.
+the selected test-cases.
 
-A workflow is a [makac](https://jwdevantier.github.io/makac) script with the
-[makac.qemu](https://jwdevantier.github.io/makac.qemu) actions at its disposal,
-so a suite can in principle drive several VMs and do arbitrary work around the
-test run. In practice tests mostly tend to do the same setup work.
-To that end, `nvme-check` provides several [test drivers](drivers.md).
+Suites are [makac](https://jwdevantier.github.io/makac) workflows, and
+`nvme-check` provides several [test drivers](drivers.md) so tests rarely write
+that plumbing themselves.
 
 Before the first run, set the QEMU binaries in the
 [Configuration](configuration.md); there are no defaults, and the suites refuse
 to run without them.
 
-## Running tests
+## Running
 
 ```sh
-# everything: every suite, every architecture
+# every suite, every test-case
 ./nvme-check.lua
 
-# one suite on one architecture
-./nvme-check.lua tp4176 -a s390x
+# one suite
+./nvme-check.lua tp4176
 
-# one batch
+# one test: all of its test-cases
 ./nvme-check.lua tp4176:aer
 
+# one test-case
+./nvme-check.lua 'nvme14m:inspect[arch=s390x]'
+
 # show what would run, without running it
-./nvme-check.lua --list
+./nvme-check.lua --list -w 'arch=s390x'
 ```
 
-For what happens once a run starts — and why the first run per architecture
-is slow — see
-[the `libvfn-simple` driver](drivers/libvfn-simple.md#what-a-run-looks-like).
+A workflow is a declaration, not a script: it is run through the runner, never
+`makac run tests/<suite>/workflow.lua`. For what happens once a run starts —
+and why the first run per architecture is slow — see
+[the `qemu-vfio` driver](drivers/qemu-vfio.md#what-a-run-looks-like).
 
-## Selecting tests
+## Selecting test-cases
 
-Selection has two axes: the suites named on the command line, and the
-`--where` tag expression.
+Two inputs decide what runs: the positional selectors on the command line and
+the `-w` tag expression. Both apply to the same universe — every test-case the
+runner discovered — which `--list` prints.
 
-### Suites and single tests
+### Suites, tests and test-cases
 
-The positional arguments name suites. `./nvme-check.lua tp4176` runs only that
-suite; with no positional arguments, every discovered suite is selected.
-An unknown name fails with the list of available suites.
+`./nvme-check.lua tp4176` runs one suite; with no positional selectors every
+discovered suite is selected, and an unknown name is an error listing the
+available suites.
 
-To run a single test, name it as `suite:test`: `./nvme-check.lua tp4176:aer`.
-The test name is applied as a name filter across the suites you selected
-(test names are implicit tags — the same mechanism `--where aer` uses), and
-it combines with the other flags: `-a s390x` further restricts the
-architecture, `-w` is and-ed with it. Since the test is named explicitly, a
-name that does not exist is an error listing the suite's tests, not an empty
+`suite:test` narrows to every test-case of one test (`tp4176:aer`); a
+misspelled test is an error listing that suite's tests, never a silent empty
 selection.
+
+Append the parameters in brackets to pick exactly one test-case — the brackets
+are shell globs, so quote the argument:
+
+```sh
+./nvme-check.lua 'nvme14m:inspect[arch=s390x]'
+```
 
 ### Tags
 
-Every batch is tagged, and `--where` filters on those tags. There are three
+Every test-case is tagged, and `--where` filters on those tags. There are three
 sources of tags:
 
-1. The batch's `tags` list in its `workflow.lua` (for example `tp4176`,
+1. The test's `tags` list in its `workflow.lua` (for example `tp4176`,
    `fast`, `slow`).
-2. The batch's `name`.
-3. The architecture it runs on (`amd64`, `s390x`).
+2. One `<key>=<value>` tag per parameter. A test declaring
+   `params = { { arch = "amd64" }, { arch = "s390x" } }` produces two
+   test-cases, tagged `arch=amd64` and `arch=s390x`; a test without `params`
+   is one unparameterized test-case.
+3. The suite, the test's base name and the concrete test-case's name
+   (`nvme14m`, `inspect`, `inspect[arch=s390x]`).
 
-So `--where aer` selects the batch named `aer`, and `--where s390x` selects
-everything that runs on s390x.
+So `--where aer` selects every test-case of the test named `aer`, and
+`--where 'arch=s390x'` selects every test-case whose parameters say it runs on
+s390x.
 
 ### The `--where` expression language
 
 `--where` takes a boolean expression over tags, in the style of pytest's `-m`:
 
-| Expression | Selects batches that … |
+| Expression | Selects test-cases that … |
 |---|---|
 | `aer` | carry the tag `aer` |
-| `fast and s390x` | carry both |
+| `fast and arch=s390x` | carry both |
 | `aer or feature` | carry either |
 | `not slow` | do not carry `slow` |
 | `(aer or feature) and not slow` | parentheses group; `not` binds tightest, then `and`, then `or` |
 
-Identifiers are case-sensitive and may contain letters, digits, `_`, `-`, and
-`.`; the words `and`, `or`, and `not` are reserved.
+Identifiers are case-sensitive and may contain letters, digits, `_`, `-`,
+`.` — and, because parameter tags and test-case names contain them, `=`, `[`,
+`]` and `,`. The words `and`, `or` and `not` are reserved. Matching is exact:
+`arch=s390x` is one tag, not a substring search; a bare `s390x` is a
+different tag.
 
 An unknown tag selects nothing, so an unexpectedly empty run is usually a typo
 — check with `--list`. A malformed expression fails before any VM boots, with
@@ -93,37 +108,20 @@ invalid tag expression: expected a tag or '(' but the expression ended here
          ^
 ```
 
-The expression language is a standalone module, `testlib/lib/tagexpr.lua`,
-with its own unit suite at `testlib/tests/tagexpr_test.lua`. That suite is the
-reference for the full grammar:
+## Options
 
-```sh
-makac run testlib/tests/tagexpr_test.lua
-```
+`./nvme-check.lua --help` prints the same list at the terminal; positional
+selection is covered in [Selecting test-cases](#selecting-test-cases).
 
-## Flags
-
-```
-usage: nvme-check.lua [suite[:test]...] [-c file] [-a arch]... [-w expr] [-l]
-```
-
-| Flag | Meaning |
+| Option | Meaning |
 |---|---|
-| `suite[:test]` (positional) | Restrict to these suites, or to one test within a suite (default: all of `tests/*`). |
-| `-c`, `--config file` | Which per-machine config file to use (see [Configuration](configuration.md)). |
-| `-a`, `--arch arch` | Only this architecture (`amd64`, `s390x`, …). Repeatable or comma-separated. |
-| `-w`, `--where expr` | Boolean tag expression, described above. |
-| `-l`, `--list` | List the selected (architecture, batch) pairs without running anything. |
+| `-c`, `--config FILE` | Per-machine config file (see [Configuration](configuration.md)). |
+| `-w`, `--where EXPR` | Boolean tag expression, described above. |
+| `-l`, `--list` | Print one line per selected test-case (`suite:name[params]` and its tags); run nothing. |
 | `-h`, `--help` | Usage text. |
 
-## Running a suite
-
-Workflows are declarations loaded by the runner — there is no standalone
-`makac run tests/<suite>/workflow.lua`. Run a whole suite by naming it:
-
-```sh
-./nvme-check.lua tp4176
-```
+The config file is `-c` if given, else `$NVME_CONFIG`, else the conventional
+`config.user.lua` in the project root.
 
 ## Exit codes
 

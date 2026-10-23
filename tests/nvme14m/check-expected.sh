@@ -140,12 +140,13 @@ run_suite() {
   tmp="$(mktemp)" || return 2
   for b in $batches; do
     printf '\n=== nvme14m:%s ===\n' "$b" >> "$run_log"
-    ./nvme-check.lua "nvme14m:$b" -a amd64 >"$tmp" 2>&1
+    # the allow-list is amd64-only, and `arch` is an ordinary tag now
+    ./nvme-check.lua "nvme14m:$b" -w 'arch=amd64' >"$tmp" 2>&1
     rc=$?
     cat "$tmp" >> "$run_log"
 
     # On success makac does not surface the test program's stdout/stderr (see
-    # nvmecheck:libvfn-simple in testlib/lib/libvfn_simple.lua), so a green
+    # nvmecheck:qemu-vfio in testlib/lib/qemu_vfio.lua), so a green
     # batch has no Zig summary at all. Only a *non-zero* batch is expected to
     # carry one; if it does not, the batch died before its tests ran.
     if (( rc != 0 )) && ! has_zig_summary < "$tmp"; then

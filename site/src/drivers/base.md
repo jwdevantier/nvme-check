@@ -17,14 +17,14 @@ qtest or something entirely different.
 | `run` | `fun(args)` (required) | the test itself; raise to FAIL, return to PASS |
 | `args` | any | freeform payload handed to `run` as `args.args` |
 
-`run` receives one table: `arch`, `suite` and `name` (set by the runner
-[before the driver is called](../drivers.md#the-contract)), plus the test's
-own `args` from `with`.
+`run` receives one table: `params`, `case`, `suite` and `name` (set by the
+runner [before the driver is called](../drivers.md#the-contract)), plus the
+test's own `args` from `with`.
 
 ## Example: reimplementing the vfio test flow
 
 The pieces the stock drivers are built from are usable directly — enough to
-rebuild the whole vfio flow in a test body (`libvfn-simple` is essentially
+rebuild the whole vfio flow in a test body (`qemu-vfio` is essentially
 this plus its `pre_test`/`post_test` hooks):
 
 ```lua
@@ -35,7 +35,7 @@ this plus its `pre_test`/`post_test` hooks):
       local join  = require("path").join
 
       -- machine up: ensure image, spawn, loadvm baseline snapshot, ssh up
-      local ctx = guest.boot(args.arch)
+      local ctx = guest.boot(args.params.arch)
 
       -- device: fresh drive, QMP-hotplug controller, unbind nvme.ko -> BDF
       local bdf = ctx.add_nvme {
@@ -47,7 +47,7 @@ this plus its `pre_test`/`post_test` hooks):
       -- compile for the guest (static musl test binary)
       local bin = step {
         uses = "nvmecheck:build",
-        with = { arch = args.arch,
+        with = { arch = args.params.arch,
                  root = join("tests", args.suite, "batches/identify.zig") },
       }.out.bin
 

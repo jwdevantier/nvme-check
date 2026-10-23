@@ -26,8 +26,8 @@ return {
       name = "bringup-datapath",
       -- tag as desired, should generally add 'qtest' and 'fast'
       tags = { "qtest", "fast" },
-      -- mark architecture(s) appropriate for this test
-      archs = { "amd64" },
+      -- the test-case's parameters; here `arch` names the emulated target
+      params = { { arch = "amd64" } },
       with = {
         -- test program to run, relative to `./tests/<suite>`
         program = "batches/bringup_datapath.zig"

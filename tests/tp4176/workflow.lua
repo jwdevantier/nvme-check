@@ -6,9 +6,10 @@
 --
 -- A workflow is a DECLARATION: it returns { uses, tests = {...} } where a
 -- test is a step-spec (`uses` = the driver action, `with` = its payload) plus
--- the harness-known selection keys (name/tags/archs). The runner loads every
--- suite, selects (arch, test) pairs in one pass, and executes each pair as a
--- makac step.  ./nvme-check.lua  is the entry point (--where, --list).
+-- the harness-known selection keys (name/tags/params). The runner loads every
+-- suite, expands each test's `params` into concrete cases, selects those cases
+-- in one pass, and executes each one as a makac step.  ./nvme-check.lua  is the
+-- entry point (--where, --list).
 --
 -- `uses` names the driver: set it on the suite (applies to every test) and/or
 -- per test (overrides the suite's). There is no harness-level default. The
@@ -28,15 +29,19 @@ local function nvme()
 end
 
 return {
-	uses = "nvmecheck:libvfn-simple",
+	uses = "nvmecheck:qemu-vfio",
 	tests = {
 		{ name = "identify", tags = { "tp4176", "fast" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = { program = "batches/identify.zig", nvme = nvme() } },
 		{ name = "log_page", tags = { "tp4176" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = { program = "batches/log_page.zig", nvme = nvme() } },
 		{ name = "feature", tags = { "tp4176" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = { program = "batches/feature.zig", nvme = nvme() } },
 		{ name = "aer", tags = { "tp4176", "slow" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = { program = "batches/aer.zig", nvme = nvme() } },
 	},
 }

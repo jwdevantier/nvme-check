@@ -67,6 +67,16 @@ for _, c in ipairs({
 	{ "NOT",              { "slow" },               false }, -- "NOT" is a tag, not the keyword
 	-- unknown tags select nothing (a typo is visible via --list, not hidden)
 	{ "nosuchtag",        { "aer" },                false },
+	-- parameter tags and concrete case labels
+	{ "arch=s390x",                     { "arch=s390x" },                  true },
+	{ "arch=s390x",                     { "arch=amd64" },                 false },
+	{ "fast and arch=s390x",            { "fast", "arch=s390x" },         true },
+	{ "not arch=s390x",                 { "arch=amd64" },                 true },
+	{ "dev=vnvme",                      { "dev=vnvme" },                  true },
+	{ "inspect[arch=amd64,dev=nvme]",   { "inspect[arch=amd64,dev=nvme]" }, true },
+	{ "inspect[arch=amd64,dev=nvme]",   { "inspect[arch=amd64]" },        false },
+	-- exact match, never a prefix/substring
+	{ "inspect",                        { "inspect[arch=amd64]" },        false },
 }) do
 	local src, tags, expected = c[1], c[2], c[3]
 	local label = ("eval %-30s"):format(("%q"):format(src))
@@ -106,6 +116,19 @@ for _, c in ipairs({
 		report(err.pos == want_pos, label .. " pos",
 			("pos %d, expected %d — %s"):format(err.pos, want_pos, err.msg))
 	end
+end
+
+-- --- compile-only cases ------------------------------------------------------
+-- These carry punctuation in the middle of an identifier; the lexer must accept
+-- them even where the expression is not evaluated here.
+
+for _, src in ipairs({
+	"(aer or feature) and not arch=s390x",
+	"inspect[arch=s390x,dev=vnvme]",
+}) do
+	local pred, err = tagexpr.compile(src)
+	report(pred ~= nil and err == nil, ("compile %-26s"):format(("%q"):format(src)),
+		err and tagexpr.explain(src, err) or "predicate is nil")
 end
 
 -- --- explain() rendering ------------------------------------------------------

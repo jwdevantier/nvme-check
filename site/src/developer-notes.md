@@ -38,7 +38,8 @@ build:
 zig build test -Dlibvfn-src=~/repos/libvfn
 ```
 
-To make the harness use it for every batch build, set it in the config file:
+To make the harness use it for every test-program build, set it in the config
+file:
 
 ```lua
 return {
@@ -56,7 +57,7 @@ the fork, then bump the SHA and hash in `build.zig.zon` via
 
 ## Writing tests in C? (a sketch)
 
-The test batch binaries are Zig programs, but libvfn is a C library, and nothing
+Test programs are written in Zig, but libvfn is a C library, and nothing
 in nvme-tests outright prevents writing tests in C.
 `./src/probe.c` was translated from `./src/probe.zig` and compiled using the Zig
 toolchain like so:
@@ -68,7 +69,7 @@ zig cc -c src/probe.c -o /tmp/probe.o \
   -Izig-out/libvfn-src/ccan -Ivendor
 ```
 
-If deemed valuable, then the `nvmecheck:libvfn-simple` driver (or the
+If deemed valuable, then the `nvmecheck:qemu-vfio` driver (or the
 `nvmecheck:build` action underneath it) could be extended to detect if the
 test program has the `.c` extension, and if so, compile programs as shown
 above. The cost would be maintaining data-structures in two languages,

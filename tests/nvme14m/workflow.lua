@@ -8,14 +8,15 @@
 -- mechanism. See README.md and ~/nvme-1.4.poc.overview.md.
 --
 -- The entry `name` is the program's `:` filter key
--- (e.g. `./nvme-check.lua nvme14m:inspect -a amd64`).
+-- (e.g. `./nvme-check.lua nvme14m:inspect -w 'arch=amd64'`).
 
 return {
-	uses = "nvmecheck:libvfn-simple",
+	uses = "nvmecheck:qemu-vfio",
 	tests = {
 		-- Read-only: transport registers, BAR/MSI-X, interrupts, Identify,
 		-- log pages. Shares one session; mutates nothing.
 		{ name = "inspect", tags = { "nvme14", "fast" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
 				program = "batches/inspect.zig",
 				nvme = {
@@ -32,6 +33,7 @@ return {
 		-- Get/Set Features: mutates feature values, so it gets its own
 		-- session and stays queue-less.
 		{ name = "features", tags = { "nvme14", "fast" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
 				program = "batches/features.zig",
 				nvme = {
@@ -46,6 +48,7 @@ return {
 		-- Admin error completions, AER, Abort: drives the admin queue
 		-- directly, so it must not share with common.admin() users.
 		{ name = "admin_errors", tags = { "nvme14" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
 				program = "batches/admin_errors.zig",
 				nvme = {
@@ -60,6 +63,7 @@ return {
 		-- I/O queue lifecycle and NVM datapath: all queue creation lives
 		-- here so the features program always sees a queue-less controller.
 		{ name = "io", tags = { "nvme14", "io" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
 				program = "batches/io.zig",
 				nvme = {
@@ -74,6 +78,7 @@ return {
 		-- CC.EN reset/enable state machine: destroys libvfn's cached
 		-- queues, so it is terminal to its own session.
 		{ name = "reset", tags = { "nvme14", "destructive" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
 				program = "batches/reset.zig",
 				nvme = {
@@ -87,6 +92,7 @@ return {
 
 		-- CC.SHN / CSTS.SHST shutdown: terminal, own session.
 		{ name = "shutdown", tags = { "nvme14", "destructive" },
+			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
 				program = "batches/shutdown.zig",
 				nvme = {

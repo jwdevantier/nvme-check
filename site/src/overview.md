@@ -3,43 +3,67 @@
 
 # Overview
 
-nvme-check is a test setup for QEMU's emulated NVMe device (`hw/nvme`): its
-immediate purpose is checking that the device behaves as the official NVM
-Express specifications require — against any QEMU build, including one
-carrying a patch under review.
+**In short:** nvme-check provides a full-featured test runner, enables it to
+handle complex test setup/teardown through [test drivers](drivers.md), all to
+compress complex test workflows down to a single command.
 
-There are two parts to that, and the second may be useful well beyond NVMe:
+nvme-check discovers and filters tests, expands parameterized tests into
+concrete test-cases, and its [test drivers](drivers.md) do whatever needs
+doing before the test runs: (re)build a VM image, boot and snapshot a guest,
+cross-compile the test program, bind device(s) to VFIO — and so on.
 
-1. **A test runner**, `./nvme-check.lua`. It auto-discovers suites under
-   `tests/`, loads each suite's declared tests, and can enumerate, filter and
-   execute them. Filtering is a pytest-inspired tag expression
-   (`-w "fast and not slow"`); a test's name, its suite and the architecture
-   are implicit tags.
+nvme-check knows nothing about NVMe, VFIO or qtest — it is specialized entirely
+through the driver used. Implement a different driver and it can drive a fuzzer,
+a linter or tests of the NVMe kernel drivers in Linux or FreeBSD. It is the
+drivers that specialize it for QEMU's `hw/nvme` device.
 
-2. **VM test infrastructure.** Per-architecture base images are customized
-   with cloud-init, built once and snapshotted; a test then resumes a running
-   VM from saved state in seconds rather than booting. On top of that: device
-   hot-plug over QMP, binding a device to vfio-pci, SSH/SCP control of the
-   guest — and the same cross-compiled test binary runs on both amd64 and
-   s390x.
-
-How a test actually runs is the job of a *driver* — a makac action named by
-the test's `uses` field (see [Test drivers](drivers.md)). The stock
-[`libvfn-simple`](drivers/libvfn-simple.md) driver uses the VM infrastructure
-for black-box device tests: the controller is handed to `vfio-pci`, and a
-test binary drives it directly over
-[libvfn](https://github.com/SamsungDS/libvfn) — queues, doorbells, CQEs, no
-kernel NVMe driver in between. That is the path the current NVMe catalogue
-(TP4176 and friends) takes, and nothing ties a test to it: the
-[`base`](drivers/base.md) driver runs an arbitrary function, so the catalogue
-can just as well hold QEMU's linter scripts, its existing NVMe qtest, or
-anything else deserving a regression check.
+## Tests and test-cases
+Every test, whether `qtest`, `qemu-vfio`, or a driver you add yourself, is
+defined, listed and selected the same way.
+A suite holds tests, and a test *may* be parameterized, producing a test-case
+per set of parameters. The test-case is the unit that is listed, filtered and
+run.
+Tag a test and `--where <query>` filters on the tag; parameterize the test and
+each parameter becomes a `<param>=<value>` tag you can filter on the same way.
+Parameterization is how you declare which architecture(s) and device(s) a test
+runs against, and tags group tests — even across test suites and types — for
+easy selection.
 
 ```sh
-./nvme-check.lua                 # every suite, every architecture
-./nvme-check.lua tp4176:aer      # one test
-./nvme-check.lua --list          # enumerate, run nothing
+./nvme-check.lua                           # every suite, every test-case (24)
+./nvme-check.lua tp4176:aer                # one test: both of its test-cases
+./nvme-check.lua 'tp4176:aer[arch=s390x]'  # one test-case
+./nvme-check.lua --list -w 'arch=s390x'    # what would run: 10 of 24
 ```
+
+See [selecting test-cases](user-guide.md#selecting-test-cases) for the query
+language, and remember: `--list` shows what a query selects without running
+anything.
+
+## Test drivers
+[`qtest`](drivers/qtest.md) test-cases run on the host: the driver checks the
+test-case's parameters, compiles the program and runs it; the program starts
+QEMU with `-accel qtest` and talks to it over a socket. White-box,
+device-specific, fast.
+
+[`qemu-vfio`](drivers/qemu-vfio.md) test-cases run inside a Linux guest,
+talking directly to the device over vfio-pci. nvme-check builds the VM image
+once with cloud-init (rebuilt only when its inputs change), boots the guest
+and snapshots it, so a test-case starts from saved state instead of a boot.
+The declared NVMe devices are hot-plugged over QMP per test-case: clean state,
+and every test specifies the device(s) and their parameters.
+
+[`base`](drivers/base.md) is perfect for one-off tests. It does nothing except
+run the Lua function you define. That function gets imperative tools — the
+[Lua standard library](https://www.lua.org/manual/5.4/#index) and the expanded
+[Makac Lua API](https://jwdevantier.github.io/makac/lua-api/makac-api.html) —
+plus the high-level, declarative VM and image actions of
+[makac.qemu](https://jwdevantier.github.io/makac.qemu/reference/index.html).
+
+## Extensible
+A new [driver](drivers.md) wraps the orchestration around a different kind of
+test: boot a Linux or FreeBSD guest and exercise its kernel NVMe driver, or
+run a fuzzer through the same discovery, tagging and reporting.
 
 ## Reading guide
 

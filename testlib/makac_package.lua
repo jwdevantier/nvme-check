@@ -6,7 +6,7 @@
 
 local zigtest = require("./zigtest")
 local base = require("./base")
-local libvfn_simple = require("./libvfn_simple")
+local qemu_vfio = require("./qemu_vfio")
 local qtest = require("./qtest")
 
 return {
@@ -16,10 +16,10 @@ return {
   actions = {
     build = zigtest.build,
     -- test drivers: a test is a step-spec with harness-known keys
-    -- (name/uses/tags/archs); these are the stock `uses` values. See
+    -- (name/uses/tags/params); these are the stock `uses` values. See
     -- tmp-decomplect-vfio-and-tests.md.
     base = base.run,
-    ["libvfn-simple"] = libvfn_simple.run,
+    ["qemu-vfio"] = qemu_vfio.run,
     qtest = qtest.run,
   },
 }

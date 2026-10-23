@@ -13,7 +13,13 @@
 --   and   := unary ("and" unary)*
 --   unary := "not" unary | atom
 --   atom  := IDENT | "(" expr ")"
---   IDENT := [%w_%.%-]+
+--   IDENT := [%w_%.%-=%[%],]+
+--
+-- The extra identifier characters are not decoration: parameter tags are
+-- `key=value` (`arch=s390x`, `dev=vnvme`), and a concrete test-case label is
+-- `inspect[arch=s390x,dev=vnvme]`, so `=`, `[`, `]` and `,` are ordinary
+-- identifier characters. Matching stays exact: no substrings, no globs —
+-- `inspect` does not match the label `inspect[arch=amd64]`.
 --
 -- Identifiers are case-sensitive; `and`, `or`, `not` are reserved words
 -- (lowercase only — a tag literally named "and" cannot be referenced).
@@ -27,7 +33,7 @@ local M = {}
 ---@field msg string  -- human-readable description, no position embedded
 ---@field pos integer -- byte index into the source string
 
-local IDENT_PAT = "^[%w_%.%-]+"
+local IDENT_PAT = "^[%w_%.%-=%[%],]+"
 
 ---@alias TagExprToken { kind: "ident"|"and"|"or"|"not"|"lparen"|"rparen"|"eof", value?: string, pos: integer }
 

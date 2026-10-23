@@ -3,75 +3,86 @@
 --
 -- Discovers tests/<suite>/workflow.lua, loads each suite's DECLARATION
 -- (`return { uses?, tests = {...} }` — a test is a step-spec the harness
--- knows two things about: name/uses/tags/archs; the driver must be named by
+-- knows four things about: name/uses/tags/params; the driver must be named by
 -- the test or the suite; see
--- tmp-decomplect-vfio-and-tests.md), selects (arch, test) pairs in one pass
--- across the union of suites, then executes each pair as a makac step:
+-- tmp-decomplect-vfio-and-tests.md), expands each test's top-level `params`
+-- into concrete test-cases (lib/params.lua), selects them in one pass across
+-- the union of suites, then executes each test-case as a makac step:
 -- `res.err` is a FAIL, anything else a PASS.
 --
 -- Tag selection: -w/--where takes a pytest-style boolean expression
--- (testlib/lib/tagexpr.lua); test name, suite and arch are implicit tags.
+-- (testlib/lib/tagexpr.lua); the suite, the test name and the concrete
+-- test-case label (`inspect[arch=s390x]`) are implicit tags, next to a test's
+-- own tags and one `key=value` tag per parameter. There is no separate way to
+-- pick an architecture: `-w 'arch=s390x'` is it.
 --
 -- Usage:
 --   ./nvme-check.lua [--help]
---   ./nvme-check.lua [suite...] [-c file] [-a arch]... [-w expr] [-l]
+--   ./nvme-check.lua [suite...] [-c file] [-w expr] [-l]
 --
 --   suite               one or more suites (default: all of tests/*)
 --   -c, --config file   per-machine config file (default: config.user.lua;
 --                       env: NVME_CONFIG; see config.user.sample.lua)
---   -a, --arch arch     only this arch (repeatable, or comma-separated)
 --   -w, --where expr    boolean tag expression, pytest -m style
---   -l, --list          list selected (arch, test) pairs, run nothing
+--   -l, --list          list the selected test-cases, run nothing
 --   -h, --help          this text
 --
 -- Examples:
 --   ./nvme-check.lua
---   ./nvme-check.lua tp4176 --arch s390x
---   ./nvme-check.lua tp4176:identify        (one test — suite:test)
+--   ./nvme-check.lua tp4176 -w 'arch=s390x'
+--   ./nvme-check.lua 'nvme14m:inspect[arch=s390x]'
+--   ./nvme-check.lua tp4176:identify        (every test-case of one test)
 --   ./nvme-check.lua --where "fast and not slow"
---   ./nvme-check.lua -c ci.lua --where "(aer or feature) and amd64"
+--   ./nvme-check.lua -c ci.lua --where "(aer or feature) and arch=amd64"
 --   ./nvme-check.lua tp4176 -w aer --list
 
--- config/ is required first and -c/--config applied before anything else
--- loads: requiring arch/selection evaluates the QEMU paths at load time.
+-- the config module is required first and -c/--config applied before anything
+-- else loads: the config file is what config.get() answers from later on.
 local config = require("pkgs/nvmecheck/config")
 
 local USAGE = [=[
-usage: nvme-check.lua [suite[:test]...] [-c file] [-a arch]... [-w expr] [-l]
+usage: nvme-check.lua [SUITE...] [-c FILE] [-w EXPR] [-l]
+       nvme-check.lua --help
 
-  suite[:test]      one or more suites, or suite:test pairs
-                    (default: all of tests/*)
-  -c, --config file per-machine config file (default: config.user.lua;
+  A suite is a directory under tests/. A selector names a suite
+  (`nvme14m`), one test in it (`tp4176:aer`, all of its test-cases) or one
+  exact test-case (`tp4176:aer[arch=s390x]`, quote it — `[` and `]` are
+  shell globs). Several selectors may be given; the default is every suite.
+
+  Examples:
+    ./nvme-check.lua                           every suite, every test-case
+    ./nvme-check.lua nvme14m                   one suite
+    ./nvme-check.lua tp4176:aer                one test: all its test-cases
+    ./nvme-check.lua 'tp4176:aer[arch=s390x]'  one exact test-case
+    ./nvme-check.lua --list -w 'fast'          list matches; run nothing
+
+  Query: -w takes a pytest -m style boolean expression over tags. Every
+  test-case is tagged with its suite (`nvme14m`), its test name (`aer`),
+  its full name (`aer[arch=s390x]`), its declared tags (`fast`,
+  `destructive`) and one `key=value` per parameter. Matching is exact:
+    -w 'aer'                               a test: both of its test-cases
+    -w 'fast and not qtest'                two tags
+    -w 'arch=s390x'                        a parameter
+    -w '(aer or feature) and arch=amd64'   parentheses group
+
+  -c, --config FILE per-machine config (default: config.user.lua;
                     env: NVME_CONFIG; see config.user.sample.lua)
-  -a, --arch arch   only this arch (repeatable, or comma-separated)
-  -w, --where expr  boolean tag expression, pytest -m style:
-                    "aer or feature", "fast and not slow", ...
-  -l, --list        list selected (arch, test) pairs, run nothing
+  -w, --where EXPR  tag expression, pytest -m style (see Query above)
+  -l, --list        print the selected test-cases and tags; run nothing
   -h, --help        this text
+
+  documentation: https://jwdevantier.github.io/nvme-check/
+                 see "Selecting tests" in the user guide for -w syntax
 ]=]
 
 -- --- tiny arg parser ------------------------------------------------------
 
----@param s string
----@return string[]
-local function split_csv(s)
-	local out = {}
-	for w in s:gmatch("[^,]+") do out[#out + 1] = w end
-	return out
-end
-
----@param acc string[]
----@param s string
-local function push_csv(acc, s)
-	for _, w in ipairs(split_csv(s)) do acc[#acc + 1] = w end
-end
-
 ---@param argv string[]
 ---@return { suites: string[], test_names: string[], test_reqs: { suite: string, name: string }[], sel: Selection, config_path: string? }
 local function parse_args(argv)
-	local sel = { archs = {} } ---@type Selection
+	local sel = {} ---@type Selection
 	local suites = {}
-	local test_names = {}   -- batch names folded into the where expression
+	local test_names = {}   -- test names folded into the where expression
 	local test_reqs = {}    -- {suite, name} pairs, for typo validation
 	local config_path = nil
 	local i = 1
@@ -91,8 +102,6 @@ local function parse_args(argv)
 				os.exit(0)
 			elseif flag == "-l" or flag == "--list" then
 				sel.list = true
-			elseif flag == "-a" or flag == "--arch" then
-				push_csv(sel.archs, value())
 			elseif flag == "-w" or flag == "--where" then
 				sel.where = value()
 			elseif flag == "-c" or flag == "--config" then
@@ -101,7 +110,8 @@ local function parse_args(argv)
 				error(("unknown flag: %s\n%s"):format(a, USAGE), 0)
 			end
 		else
-			-- positional: suite, or suite:test (test name becomes a where filter;
+			-- positional: suite, or suite:test (the name becomes a where
+			-- filter, so it may be a base name or one concrete test-case label;
 			-- the pair is validated after suites are loaded)
 			local s, t = a:match("^([^:]+):([^:]+)$")
 			if s then
@@ -114,7 +124,6 @@ local function parse_args(argv)
 		end
 		i = i + 1
 	end
-	if #sel.archs == 0 then sel.archs = nil end
 	return { suites = suites, test_names = test_names, test_reqs = test_reqs, sel = sel, config_path = config_path }
 end
 
@@ -140,21 +149,33 @@ end
 local parsed = parse_args(arg)
 if parsed.config_path then config.set_path(parsed.config_path) end
 
--- suite:test args: the test name is an implicit selection tag, so fold the
--- names into the where expression (and-ed with any -w the user gave)
+-- positional suite and suite:test args are implicit selection tags: fold them
+-- into the where expression (and-ed with any -w the user gave). The test part
+-- may be a base name (every test-case of that test) or a concrete test-case
+-- label — the
+-- lexer accepts the brackets and commas, so 'inspect[arch=s390x]' goes through
+-- verbatim.
+local filters = {}
+if #parsed.suites > 0 then
+	filters[#filters + 1] = "(" .. table.concat(parsed.suites, " or ") .. ")"
+end
 if #parsed.test_names > 0 then
-	local name_expr = "(" .. table.concat(parsed.test_names, " or ") .. ")"
+	filters[#filters + 1] = "(" .. table.concat(parsed.test_names, " or ") .. ")"
+end
+if #filters > 0 then
+	local folded = table.concat(filters, " and ")
 	if parsed.sel.where then
-		parsed.sel.where = "(" .. parsed.sel.where .. ") and " .. name_expr
+		parsed.sel.where = "(" .. parsed.sel.where .. ") and " .. folded
 	else
-		parsed.sel.where = name_expr
+		parsed.sel.where = folded
 	end
 end
 
--- now that the config file choice is settled, load the harness modules
--- (selection -> arch resolves QEMU paths from it at load time)
+-- now that the config file choice is settled, load the harness modules (no
+-- QEMU paths are resolved at load time any more; parameter keys are opaque to
+-- the runner, so it never learns which one, if any, is an architecture)
 local selection = require("pkgs/nvmecheck/selection")
-local archlib = require("pkgs/nvmecheck/arch")
+local params = require("pkgs/nvmecheck/params")
 local tagexpr = require("pkgs/nvmecheck/tagexpr")
 
 -- validate the --where expression up front: a typo must fail in milliseconds,
@@ -170,23 +191,17 @@ local available = discover_suites()
 local known = {}
 for _, suite in ipairs(available) do known[suite] = true end
 
-local suites = parsed.suites
-if #suites == 0 then
-	suites = available
-else
-	for _, suite in ipairs(suites) do
-		if not known[suite] then
-			error(("unknown suite '%s' (available: %s)")
-				:format(suite, table.concat(available, ", ")), 0)
-		end
+-- collection is global: every suite is loaded, so `--list` always reports the
+-- complete concrete universe and "skipped" counts exactly the test-cases the
+-- tag expression rejected — including the test-cases a positional suite/test
+-- filter left out. An unknown suite is still a hard error.
+for _, suite in ipairs(parsed.suites) do
+	if not known[suite] then
+		error(("unknown suite '%s' (available: %s)")
+			:format(suite, table.concat(available, ", ")), 0)
 	end
-	-- dedupe: 'tp4176:aer tp4176:feature' would otherwise load a suite twice
-	local seen, unique = {}, {}
-	for _, suite in ipairs(suites) do
-		if not seen[suite] then seen[suite] = true; unique[#unique + 1] = suite end
-	end
-	suites = unique
 end
+local suites = available
 
 -- --- loading suite declarations --------------------------------------------
 
@@ -214,7 +229,7 @@ local function load_suite(suite)
 			uses = t.uses or def.uses,
 			suite = suite,
 			tags = t.tags,
-			archs = t.archs,
+			params = t.params,
 			with = t.with or {},
 		}
 	end
@@ -238,74 +253,86 @@ if #load_failed > 0 then
 	error("nvme-check: failures", 0)
 end
 
+-- Expand every declaration into concrete test-cases (one per params entry;
+-- one unparameterized test-case when params is absent). A malformed
+-- declaration is a user-facing load error naming the suite and test.
+local cases = params.expand_all(all_tests)
+
 -- suite:test typo check: an explicitly named test that does not exist should
 -- fail loudly, not silently select nothing (unlike -w, where an unknown tag
--- legitimately matches nothing).
+-- legitimately matches nothing). The request may name a test (all its
+-- test-cases) or one concrete test-case label, e.g. 'inspect[arch=s390x]'.
 for _, req in ipairs(parsed.test_reqs) do
-	local found, avail = false, {}
-	for _, t in ipairs(all_tests) do
-		if t.suite == req.suite then
-			avail[#avail + 1] = t.name
-			if t.name == req.name then found = true end
+	local found, avail, seen = false, {}, {}
+	for _, c in ipairs(cases) do
+		if c.suite == req.suite then
+			if not seen[c.name] then
+				seen[c.name] = true
+				avail[#avail + 1] = c.name
+			end
+			if c.name == req.name or c.label == req.name then found = true end
 		end
 	end
 	if not found then
 		table.sort(avail)
-		error(("unknown test '%s' in suite '%s' (available: %s)")
+		error(("unknown test '%s' in suite '%s' (available: %s; a concrete "
+			.. "test-case name such as 'inspect[arch=s390x]' works too)")
 			:format(req.name, req.suite, table.concat(avail, ", ")), 0)
 	end
 end
 
 -- --- one selection pass over the union of all suites ------------------------
 
-local selected, skipped = selection.expand(all_tests, parsed.sel)
+local selected, skipped = selection.expand(cases, parsed.sel)
 
 if parsed.sel.list then
-	for _, p in ipairs(selected) do
-		print(("  %-6s %-24s %s"):format(p.arch,
-			p.test.suite .. ":" .. p.test.name,
-			table.concat(p.test.tags or {}, ",")))
+	for _, c in ipairs(selected) do
+		print(("  %-48s %s"):format(c.suite .. ":" .. c.label, table.concat(c.tags, ",")))
 	end
 	print(("\n%d selected, %d skipped"):format(#selected, skipped))
 	os.exit(0)
 end
 
--- Refuse up front when an arch in play has no QEMU binaries configured,
--- rather than failing one test at a time.
-for _, arch in ipairs(parsed.sel.archs or archlib.names) do archlib.get(arch) end
-
--- --- execute: one step per (arch, test) pair --------------------------------
+-- --- execute: one step per concrete test-case -------------------------------
+--
+-- Parameters are opaque to the runner, so it cannot know which one, if any, is
+-- an architecture: there was deliberately no up-front "is this arch
+-- configured?" check before selection. Each driver reports a missing QEMU
+-- binary itself, when it interprets the parameter it cares about.
 
 local failures = {}
-for _, p in ipairs(selected) do
-	local label = p.test.suite .. ":" .. p.test.name
-	print(("\n=== [%s] %s ==="):format(p.arch, label))
+for _, c in ipairs(selected) do
+	local label = c.suite .. ":" .. c.label
+	print(("\n=== %s ==="):format(label))
 
-	-- with is driver-owned; the runner injects only arch/suite/name
+	-- with is driver-owned; the runner injects only params/suite/name/case
 	local with = {}
-	for k, v in pairs(p.test.with) do with[k] = v end
-	with.arch = p.arch
-	with.suite = p.test.suite
-	with.name = p.test.name
+	for k, v in pairs(c.with) do with[k] = v end
+	local cparams = {}
+	for k, v in pairs(c.params) do cparams[k] = v end
+	with.params = cparams
+	with.suite = c.suite
+	with.name = c.name
+	with.case = c.label
 
-	local ok, res = pcall(step, { name = label, uses = p.test.uses, with = with })
+	local ok, res = pcall(step, { name = label, uses = c.uses, with = with })
 	-- NB: not `ok and res.err or tostring(res)` — a nil res.err must stay nil
 	local err
 	if ok then err = res and res.err else err = tostring(res) end
 	if err == nil then
-		print(("  PASS [%s] %s"):format(p.arch, label))
+		print(("  PASS %s"):format(label))
 	else
-		-- concise here; the full err (which for libvfn-simple embeds the
+		-- concise here; the full err (which for qemu-vfio embeds the
 		-- guest's whole stdout/stderr) is printed once in the global summary
-		print(("  FAIL [%s] %s"):format(p.arch, label))
-		failures[#failures + 1] = { arch = p.arch, name = label, err = tostring(err) }
+		print(("  FAIL %s"):format(label))
+		failures[#failures + 1] = { name = label, err = tostring(err) }
 	end
 end
 
 print(("\n%d ran, %d skipped, %d failed"):format(#selected, skipped, #failures))
 if #failures > 0 then
 	for _, f in ipairs(failures) do
-		print(("  FAIL [%s] %s: %s"):format(f.arch, f.name, f.err))
+		print(("  FAIL %s: %s"):format(f.name, f.err))
 	end
 	error("nvme-check: failures", 0)
 end
