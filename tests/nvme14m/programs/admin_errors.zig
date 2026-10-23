@@ -1,4 +1,4 @@
-//! NVMe 1.4 mandatory baseline — admin error / asynchronous-event batch.
+//! NVMe 1.4 mandatory baseline — admin error / asynchronous-event test program.
 //!
 //! These tests drive the admin queue directly (`vfn.rqAcquire` → `rqExec` →
 //! `cqGetCqe`/`nvme_rq_spin`) instead of `common.admin()`, because the AER test
@@ -18,7 +18,7 @@ const spec = @import("common").spec;
 
 /// Submit an admin command on the raw admin queue and return its completion
 /// queue entry. `common.admin()`'s wait path could reap an outstanding AER
-/// CQE as a spurious completion, so this batch drives the queue itself.
+/// CQE as a spurious completion, so this test program drives the queue itself.
 fn submitCqe(cmd: *vfn.Cmd) !vfn.Cqe {
     const ctrl_ = try common.ctrl();
     const rq = vfn.rqAcquire(ctrl_.adminq.sq) orelse return error.NoRequestTracker;

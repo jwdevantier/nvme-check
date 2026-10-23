@@ -1,14 +1,14 @@
 -- testlib/lib/qemu_vfio.lua
 -- The `nvmecheck:qemu-vfio` action: the single-VM libvfn test driver.
 --
--- Lifecycle (formerly batch.run, see DESIGN.md §5):
+-- Lifecycle:
 --
 --   guest.boot(arch) -> setup devices (with.nvme) -> pre_test
 --                    -> nvmecheck:build + scp + run(program)
 --                    -> post_test -> ctx.down()
 --
 -- with = {
---   program   = "batches/identify.zig",   -- relative to tests/<suite>/
+--   program   = "programs/identify.zig",   -- relative to tests/<suite>/
 --   nvme?     = NvmeSpec | NvmeSpec[] | fun(ctx, with): string[],
 --   pre_test?  = fun(ctx, with),
 --   post_test? = fun(ctx, with, result),  -- finally: runs even on failure

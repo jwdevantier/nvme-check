@@ -90,7 +90,7 @@ device-add time.
 ## Writing test programs
 
 A test's `with.program` is an ordinary Zig test root under
-`tests/<suite>/batches/`; its `test {}` blocks run in the guest against the
+`tests/<suite>/programs/`; its `test {}` blocks run in the guest against the
 controller, once per test-case. The driver sets the `NVME_BDF` environment
 variable to the PCI BDF of the freshly-bound controller inside the guest, and
 the test binary reads it to find its device. Never set it yourself:
@@ -105,7 +105,7 @@ test "identify shows feature support" {
 ```
 
 A suite may have as many test programs as it needs — each test entry points
-at its own program. Nothing scans `batches/`; a program file that no entry
+at its own program. Nothing scans `programs/`; a program file that no entry
 names never builds or runs.
 
 If test programs need shared code — opening the controller from `NVME_BDF`,
@@ -133,7 +133,7 @@ A typical declaration (from `tests/tp4176/workflow.lua`):
 ```lua
 { name = "feature", tags = { "tp4176", "fast" },
   with = {
-    program = "batches/feature.zig",
+    program = "programs/feature.zig",
     nvme = { drive = "64M",
              ctrl = { serial = "deadbeef", msi = false, iocqes = 32, iosqes = 64 } },
   } }

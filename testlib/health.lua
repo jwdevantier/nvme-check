@@ -1,8 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Jesper Wendel Devantier
 -- SPDX-License-Identifier: BSD-2-Clause
 -- nvmecheck health check (makac's design/doctor.md): the per-machine
--- configuration (config.user.lua), resolved QEMU binaries, the batch-build
--- toolchain, and a self-check that the library modules load.
+-- configuration (config.user.lua), resolved QEMU binaries, the test-program
+-- build toolchain, and a self-check that the library modules load.
 
 -- config.user.lua problems are reported by the configuration section below
 -- rather than blowing up module load; everything config-dependent is pcall'd.
@@ -86,13 +86,13 @@ return function(health, pkg_name)
 			"generate one with ssh-keygen, or set ssh.pubkey in config.user.lua")
 	end
 
-	health.start("batch build toolchain")
+	health.start("test program build toolchain")
 	local want_ok, want_nix = pcall(config.build_nix)
 	if not want_ok then want_nix = nil end -- malformed config already reported above
 	local nix_path = on_path("nix")
 	local zig_path = on_path("zig")
 	if want_nix == false then
-		health.info("build.nix = false: batches build with the ambient zig on PATH")
+		health.info("build.nix = false: test programs build with the ambient zig on PATH")
 		if zig_path then
 			health.ok("zig found at " .. zig_path)
 		else
@@ -100,16 +100,16 @@ return function(health, pkg_name)
 		end
 	elseif want_nix == true then
 		if nix_path then
-			health.ok("build.nix = true: batches build via `nix develop` (" .. nix_path .. ")")
+			health.ok("build.nix = true: test programs build via `nix develop` (" .. nix_path .. ")")
 		else
 			health.error("build.nix = true but nix is not on PATH",
 				"install nix, or set build.nix = false in config.user.lua")
 		end
 	else
 		if nix_path then
-			health.ok("auto: nix found — batches build via `nix develop` (flake-pinned zig)")
+			health.ok("auto: nix found — test programs build via `nix develop` (flake-pinned zig)")
 		elseif zig_path then
-			health.ok("auto: no nix — batches build with the ambient zig (" .. zig_path .. ")")
+			health.ok("auto: no nix — test programs build with the ambient zig (" .. zig_path .. ")")
 		else
 			health.error("neither nix nor zig found on PATH",
 				"install nix (flakes) or a zig toolchain matching build.zig.zon")

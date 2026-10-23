@@ -1,4 +1,4 @@
-//! TP4176 batch: Identify NVM (RLA). One VM session, one test binary.
+//! TP4176 test program: Identify NVM (RLA). One VM session, one test binary.
 
 const std = @import("std");
 const nvme = @import("nvme");

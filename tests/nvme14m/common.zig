@@ -1,9 +1,10 @@
 //! Shared device state and low-level accessors for the NVMe 1.4 mandatory
-//! suite's batch programs. One lazily-opened controller per test binary; the
+//! suite's test programs. One lazily-opened controller per test binary; the
 //! Zig test runner is single-threaded, so no lock is needed.
 //!
 //! Opening goes through libvfn's `nvme_init()` (via `vfntest.openFromEnv`):
-//! reset → admin queue → enable → Identify. From there the batch inspects the
+//! reset → admin queue → enable → Identify. From there the program inspects
+//! the
 //! controller at the register/config-space/command level.
 
 const std = @import("std");
@@ -12,7 +13,7 @@ const vfn = @import("vfn");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
 
-/// The suite's pure spec definitions; batches reach them as
+/// The suite's pure spec definitions; test programs reach them as
 /// `@import("common").spec`.
 pub const spec = @import("spec.zig");
 

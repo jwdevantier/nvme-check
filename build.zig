@@ -194,7 +194,7 @@ pub fn build(b: *std.Build) void {
     const vfn_c = tc.createModule();
 
     // Zig-facing infra modules (DESIGN.md §3): thin libvfn binding, shared
-    // NVMe spec structures, test-support conveniences. Batch programs and host
+    // NVMe spec structures, test-support conveniences. Test programs and host
     // unit tests import these as "vfn", "nvme", "vfntest".
     const vfn_zig = b.addModule("vfn", .{
         .root_source_file = b.path("src/vfn/vfn.zig"),
@@ -237,13 +237,13 @@ pub fn build(b: *std.Build) void {
     // Optional: build one Zig test root as a guest test binary. Invoked by the
     // `nvmecheck:build` makac action (DESIGN.md §8); the output lands in
     // <prefix>/bin/<program-name>. The suite's common.zig, if present, is
-    // exposed as the named import "common" next to the batch program; anything
+    // exposed as the named import "common" next to the test program; anything
     // else a suite needs (its spec definitions, helpers) is reached through common's
     // re-exports as ordinary file imports, so adding a suite needs no
     // build.zig change here.
     if (program) |prog| {
         const pname = program_name orelse std.fs.path.stem(prog);
-        // tests/<tp>/batches/<name>.zig -> tests/<tp>
+        // tests/<tp>/programs/<name>.zig -> tests/<tp>
         const tp_dir = std.fs.path.dirname(std.fs.path.dirname(prog) orelse "") orelse "";
 
         const prog_mod = b.createModule(.{
@@ -354,7 +354,7 @@ pub fn build(b: *std.Build) void {
 
     // Language-server support (see build/editor.zig). `zls` resolves named
     // `@import`s from the root build graph, but the per-suite modules only
-    // exist when a batch is built with `-Dprogram=...`; this widens the
+    // exist when a program is built with `-Dprogram=...`; this widens the
     // default graph for the editor without changing what `zig build` builds.
     editor.indexSuites(b, target, optimize, .{
         .vfn_c = vfn_c,

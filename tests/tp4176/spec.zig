@@ -2,7 +2,7 @@
 //!
 //! Pure: layouts, field offsets, command builders, decoders. Host-testable
 //! over synthetic buffers (`zig build test`); no device, no libvfn calls.
-//! Device-facing cases live in `batches/` and use this module.
+//! Device-facing cases live in `programs/` and use this module.
 
 const std = @import("std");
 const c = @import("vfn_c");

@@ -2,8 +2,8 @@
 //!
 //! Pure: constants, field offsets, command builders. No device, no libvfn
 //! calls, host-testable over synthetic buffers (`zig build test`). The
-//! device-facing cases live in the `batches/*.zig` programs and use this module
-//! through `common.spec`.
+//! device-facing cases live in the `programs/*.zig` test programs and use this
+//! module through `common.spec`.
 //!
 //! Scope is exactly the mandatory baseline from the POC overview: the admin
 //! command set, the mandatory Get/Set Features IDs, the mandatory log pages,

@@ -1,7 +1,7 @@
 -- tests/nvme14m/workflow.lua
 --
 -- NVMe 1.4 mandatory-baseline suite. One controller, one 64M namespace, split
--- into per-concern batch programs so that destructive work (feature writes,
+-- into per-concern test programs so that destructive work (feature writes,
 -- I/O-queue lifecycle, reset, shutdown) cannot contaminate read-only
 -- inspection. Each entry below gets its own fresh `nvme_init()` session
 -- (reset → admin queue → enable → Identify) — that session is the isolation
@@ -18,7 +18,7 @@ return {
 		{ name = "inspect", tags = { "nvme14", "fast" },
 			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
-				program = "batches/inspect.zig",
+				program = "programs/inspect.zig",
 				nvme = {
 					drive = "64M",
 					ctrl = {
@@ -35,7 +35,7 @@ return {
 		{ name = "features", tags = { "nvme14", "fast" },
 			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
-				program = "batches/features.zig",
+				program = "programs/features.zig",
 				nvme = {
 					drive = "64M",
 					ctrl = {
@@ -50,7 +50,7 @@ return {
 		{ name = "admin_errors", tags = { "nvme14" },
 			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
-				program = "batches/admin_errors.zig",
+				program = "programs/admin_errors.zig",
 				nvme = {
 					drive = "64M",
 					ctrl = {
@@ -65,7 +65,7 @@ return {
 		{ name = "io", tags = { "nvme14", "io" },
 			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
-				program = "batches/io.zig",
+				program = "programs/io.zig",
 				nvme = {
 					drive = "64M",
 					ctrl = {
@@ -80,7 +80,7 @@ return {
 		{ name = "reset", tags = { "nvme14", "destructive" },
 			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
-				program = "batches/reset.zig",
+				program = "programs/reset.zig",
 				nvme = {
 					drive = "64M",
 					ctrl = {
@@ -94,7 +94,7 @@ return {
 		{ name = "shutdown", tags = { "nvme14", "destructive" },
 			params = { { arch = "amd64" }, { arch = "s390x" } },
 			with = {
-				program = "batches/shutdown.zig",
+				program = "programs/shutdown.zig",
 				nvme = {
 					drive = "64M",
 					ctrl = {

@@ -28,7 +28,7 @@ return {
 	},
 
 	build = {
-		-- true:  always build batches via `nix develop` (flake-pinned zig).
+		-- true:  always build test programs via `nix develop` (flake-pinned zig).
 		-- false: build with the ambient zig on PATH.
 		-- unset: auto — nix when available, ambient zig when not.
 		-- nix = false,

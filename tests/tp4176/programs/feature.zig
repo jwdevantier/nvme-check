@@ -1,4 +1,4 @@
-//! TP4176 batch: Set/Get Features 28h — round-trips, rejections, and the
+//! TP4176 test program: Set/Get Features 28h — round-trips, rejections, and the
 //! async-event configuration bit.
 
 const std = @import("std");

@@ -42,7 +42,7 @@ OK
 OK
 3/3 admin_errors.test.admin error completions...expected 9, found 2
 FAIL (TestExpectedEqual)
-/tmp/nvmecheck-build-amd64-admin-errors/batches/admin_errors.zig:143:9: 0x0 in test.admin error completions (admin_errors.zig)
+/tmp/nvmecheck-build-amd64-admin-errors/programs/admin_errors.zig:143:9: 0x0 in test.admin error completions (admin_errors.zig)
 2 passed; 0 skipped; 1 failed.
 EOF
 

@@ -1,6 +1,6 @@
 -- testlib/lib/zigtest.lua
--- The `nvmecheck:build` action: cross-compile one Zig test root (a batch's
--- `program`) for a guest arch and return the resulting binary path.
+-- The `nvmecheck:build` action: cross-compile one Zig test root (a test
+-- program's `program`) for a guest arch and return the resulting binary path.
 --
 -- This owns the build.zig interface (`-Dprogram=...`); workflows never see it.
 
@@ -61,7 +61,7 @@ function M.build(with)
 	for _, a in ipairs(argv) do words[#words + 1] = shquote(a) end
 	local script = "cd " .. shquote(repo) .. " && " .. table.concat(words, " ")
 
-	-- Building batches: config.user.lua's build.nix decides between the
+	-- Building test programs: config.user.lua's build.nix decides between the
 	-- flake-pinned zig (true) and the ambient zig on PATH (false);
 	-- unset: auto-detect — nix when available, ambient zig when not.
 	local want_nix = config.build_nix()

@@ -1,4 +1,4 @@
-//! NVMe 1.4 mandatory baseline — read-only inspection batch.
+//! NVMe 1.4 mandatory baseline — read-only inspection test program.
 //!
 //! Everything here is non-destructive: the transport registers and the
 //! controller enable state, the single memory BAR plus MSI-X capability,

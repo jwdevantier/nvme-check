@@ -1,7 +1,7 @@
-//! NVMe 1.4 mandatory baseline — controller reset batch.
+//! NVMe 1.4 mandatory baseline — controller reset test program.
 //!
 //! This program is where the `CC.EN` reset/enable state machine is exercised.
-//! It is deliberately isolated from every other batch: clearing `CC.EN`
+//! It is deliberately isolated from every other test program: clearing `CC.EN`
 //! destroys libvfn's cached admin/I/O queues, so any test sharing this session
 //! would be reading a stale controller.
 //!

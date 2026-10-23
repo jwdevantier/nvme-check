@@ -1,7 +1,7 @@
-//! NVMe 1.4 mandatory baseline — feature batch.
+//! NVMe 1.4 mandatory baseline — feature test program.
 //!
 //! Get/Set Features mutates controller state, so it lives in its own program:
-//! a Set Features here can never perturb the read-only inspection batch, and
+//! a Set Features here can never perturb the read-only inspection program,
 //! it gets a fresh controller session (`common.ctrl()` → libvfn `nvme_init`).
 //!
 //! Tests run in declaration order. The Number-of-Queues test must stay before

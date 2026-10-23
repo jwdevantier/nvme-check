@@ -1,4 +1,5 @@
-//! NVMe 1.4 mandatory baseline — I/O queue lifecycle and NVM datapath batch.
+//! NVMe 1.4 mandatory baseline — I/O queue lifecycle and NVM datapath test
+//! program.
 //!
 //! All I/O-queue activity lives in one program because creating an I/O queue is
 //! what makes a later Set Features Number of Queues (07h) illegal — the spec

@@ -1,4 +1,4 @@
-//! Shared device state for a TP4176 batch: one lazily-opened controller per
+//! Shared device state for a TP4176 test program: one lazily-opened controller per
 //! test binary. The Zig test runner is single-threaded, so no lock is needed
 
 const std = @import("std");
@@ -6,7 +6,8 @@ const vfn = @import("vfn");
 const nvme = @import("nvme");
 const vfntest = @import("vfntest");
 
-/// The suite's spec definitions; batches reach them as @import("common").spec (an
+/// The suite's spec definitions; test programs reach them as
+/// @import("common").spec (an
 /// ordinary file import — the build no longer wires spec.zig as a module).
 pub const spec = @import("spec.zig");
 

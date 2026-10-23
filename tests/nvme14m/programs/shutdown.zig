@@ -1,4 +1,4 @@
-//! NVMe 1.4 mandatory baseline — controller shutdown batch.
+//! NVMe 1.4 mandatory baseline — controller shutdown test program.
 //!
 //! This program is where `CC.SHN` / `CSTS.SHST` shutdown processing is
 //! exercised. Shutdown is terminal: once `SHST` reports complete the controller

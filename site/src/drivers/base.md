@@ -48,7 +48,7 @@ this plus its `pre_test`/`post_test` hooks):
       local bin = step {
         uses = "nvmecheck:build",
         with = { arch = args.params.arch,
-                 root = join("tests", args.suite, "batches/identify.zig") },
+                 root = join("tests", args.suite, "programs/identify.zig") },
       }.out.bin
 
       -- ship + run + observe

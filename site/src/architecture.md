@@ -38,7 +38,7 @@ based on how they are tagged.
 | `testlib/lib/base.lua` | The `base` driver; calls the test's `run` function — a raise is a FAIL, anything else a PASS |
 | `testlib/lib/arch.lua`, `guest.lua`, `nvme.lua`, `images.lua` | The VM machinery; architecture definitions, base-image builds, `guest.boot`, QMP device hot-plug and vfio-bind |
 | `build.zig` + `src/` | The build setup and shared test library; compiles each test program statically for the guest architecture.<br><br>• `src/vfn` binds the libvfn C API (conveniences belong in `src/vfntest`);<br>• `src/nvme` defines the NVMe spec structures and constants — the closest equivalent to QEMU's `include/block/nvme.h`.<br><br>Suites keep vendor-specific deviations and definitions internally |
-| `tests/<suite>/batches/*.zig` | The test programs themselves; `test {}` blocks run by zig's test runner inside the guest against the controller at `$NVME_BDF` |
+| `tests/<suite>/programs/*.zig` | The test programs themselves; `test {}` blocks run by zig's test runner inside the guest against the controller at `$NVME_BDF` |
 
 ## Architectures
 

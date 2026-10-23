@@ -36,7 +36,8 @@ The hosted site is whatever GitHub Pages last built from `site/` here — keep
 
 ## Repository map
 
-- `tests/<tp>/` — the suites (one per TP: `spec.zig`, `common.zig`, `batches/`, `workflow.lua`)
+- `tests/<tp>/` — the suites (one per TP: `spec.zig`, `common.zig`, `programs/`,
+  `workflow.lua`)
 - `src/` — the Zig support library (`vfn` libvfn bindings, `vfntest` conveniences)
 - `testlib/` — the Lua harness (package `nvmecheck`) on top of makac + makac.qemu
 - `nvme-check.lua` — the runner entry point

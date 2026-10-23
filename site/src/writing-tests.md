@@ -57,7 +57,7 @@ return {
     { name = "identify",            -- ...unless the test says otherwise
       uses = "nvmecheck:qemu-vfio",
       params = { { arch = "amd64" }, { arch = "s390x" } },
-      with = { program = "batches/identify.zig",
+      with = { program = "programs/identify.zig",
                nvme = { drive = "64M", ctrl = {} } } },
   },
 }

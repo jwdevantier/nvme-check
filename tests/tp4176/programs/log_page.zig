@@ -1,4 +1,5 @@
-//! TP4176 batch: Rate Limiting log page 28h (structure + generation count).
+//! TP4176 test program: Rate Limiting log page 28h (structure + generation
+//! count).
 
 const std = @import("std");
 const c = @import("vfn_c");

@@ -160,7 +160,7 @@ function M.context(arch_name, session)
 
 	-- Hand a controller to vfio-pci (amd64 needs the emulated intel-iommu for
 	-- an iommu_group; s390x zPCI provides one natively); -> the controller's BDF.
-	-- `name` defaults to "nvme0"; use "nvme1", ... for multi-controller batches.
+	-- `name` defaults to "nvme0"; use "nvme1", ... for multi-controller programs.
 	function ctx.bind_vfio(name)
 		name = name or "nvme0"
 		assert(ctx.wait(function()

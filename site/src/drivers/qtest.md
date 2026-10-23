@@ -30,7 +30,7 @@ return {
       params = { { arch = "amd64" } },
       with = {
         -- test program to run, relative to `./tests/<suite>`
-        program = "batches/bringup_datapath.zig"
+        program = "programs/bringup_datapath.zig"
       }
     },
   }

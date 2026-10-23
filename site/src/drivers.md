@@ -14,7 +14,7 @@ return {
   tests = {
     { name = "identify",              -- runs under the suite's driver
       tags = { "tp4176" },
-      with = { program = "batches/identify.zig", nvme = { ... } } },
+      with = { program = "programs/identify.zig", nvme = { ... } } },
 
     { name = "smoke", uses = "nvmecheck:base",   -- per-test override
       with = { run = function(args) ... end } },

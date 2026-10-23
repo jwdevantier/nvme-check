@@ -1,5 +1,5 @@
-//! TP4176 batch: the full AER flow (RLCCN). This one manipulates the admin
-//! queue directly, so it runs as its own batch / VM session.
+//! TP4176 test program: the full AER flow (RLCCN). This one manipulates the
+//! admin queue directly, so it runs as its own VM session.
 
 const std = @import("std");
 const c = @import("vfn_c");

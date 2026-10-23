@@ -22,14 +22,14 @@ controller.
 
 | Test       | Program                | Covers |
 |------------|------------------------|--------------------------------------------------------------------------------|
-| `identify` | `batches/identify.zig` | Identify CNS 06h/CSI 00h: NVM CS version, RLA (HLS/SLS), SLMC                  |
-| `log_page` | `batches/log_page.zig` | Log Page 28h header + descriptor cross-references; Generation Count increments |
-| `feature`  | `batches/feature.zig`  | Set/Get Features 28h round-trip + rejections; Async Event Config RLCCN         |
-| `aer`      | `batches/aer.zig`      | Full AER flow: RLCCN enable → event on config change                           |
+| `identify` | `programs/identify.zig` | Identify CNS 06h/CSI 00h: NVM CS version, RLA (HLS/SLS), SLMC                  |
+| `log_page` | `programs/log_page.zig` | Log Page 28h header + descriptor cross-references; Generation Count increments |
+| `feature`  | `programs/feature.zig`  | Set/Get Features 28h round-trip + rejections; Async Event Config RLCCN         |
+| `aer`      | `programs/aer.zig`      | Full AER flow: RLCCN enable → event on config change                           |
 
 The spec definitions are pure (no device, no libvfn calls), live in
 `spec.zig`, and are unit-tested on the host
-(`zig build test`); the `batches/` programs are the device-facing tests.
+(`zig build test`); the files under `programs/` are the device-facing tests.
 
 ## Run
 

@@ -14,7 +14,7 @@
 -- and builds the base machine argv. An unset variable is an error.
 --
 -- with = {
---   program = "batches/x.zig",   -- relative to tests/<suite>/
+--   program = "programs/x.zig",   -- relative to tests/<suite>/
 --   params/suite/name/case = <injected by the runner>,
 -- }
 --

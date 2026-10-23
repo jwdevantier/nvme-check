@@ -12,13 +12,14 @@
 # proves that no other test fails.
 #
 # Usage:
-#   tests/nvme14m/check-expected.sh                 # run host tests + 6 batches
+#   tests/nvme14m/check-expected.sh                 # run host tests + 6 test programs
 #   tests/nvme14m/check-expected.sh --parse-only F  # parse a captured log
 #
 # Exit status:
 #   0  every failing Zig test is allow-listed (and host spec tests are green)
-#   1  an unexpected failure, or a batch that never got as far as running
-#      tests (build/boot failure), or a missing Zig summary in --parse-only
+#   1  an unexpected failure, or a test program that never got as far as
+#      running tests (build/boot failure), or a missing Zig summary in
+#      --parse-only
 #   2  usage / environment error
 #
 # Environment:
@@ -32,14 +33,14 @@ repo_root="$(cd -- "$script_dir/../.." && pwd)"
 allow_list="${NVME14M_ALLOW_LIST:-$script_dir/known-qemu-failures.txt}"
 run_log="${NVME14M_RUN_LOG:-/tmp/nvme14m-run.log}"
 
-# The six batch programs, i.e. the `:` filter keys of workflow.lua.
-batches="inspect features admin_errors io reset shutdown"
+# The six test programs, i.e. the `:` filter keys of workflow.lua.
+tests="inspect features admin_errors io reset shutdown"
 
 usage() {
   cat >&2 <<'EOF'
 usage: check-expected.sh [--parse-only FILE]
 
-  (no args)        run `zig build test`, then each of the six nvme14m batches,
+  (no args)        run `zig build test`, then each of the six nvme14m tests,
                    and check that every failing Zig test is allow-listed.
   --parse-only F   skip the run; parse the already-captured log F instead.
 
@@ -136,21 +137,22 @@ run_suite() {
 
   : > "$run_log" || { echo "check-expected: cannot write $run_log" >&2; return 2; }
 
-  local infra=0 b rc tmp
+  local infra=0 t rc tmp
   tmp="$(mktemp)" || return 2
-  for b in $batches; do
-    printf '\n=== nvme14m:%s ===\n' "$b" >> "$run_log"
+  for t in $tests; do
+    printf '\n=== nvme14m:%s ===\n' "$t" >> "$run_log"
     # the allow-list is amd64-only, and `arch` is an ordinary tag now
-    ./nvme-check.lua "nvme14m:$b" -w 'arch=amd64' >"$tmp" 2>&1
+    ./nvme-check.lua "nvme14m:$t" -w 'arch=amd64' >"$tmp" 2>&1
     rc=$?
     cat "$tmp" >> "$run_log"
 
     # On success makac does not surface the test program's stdout/stderr (see
     # nvmecheck:qemu-vfio in testlib/lib/qemu_vfio.lua), so a green
-    # batch has no Zig summary at all. Only a *non-zero* batch is expected to
-    # carry one; if it does not, the batch died before its tests ran.
+    # test program has no Zig summary at all. Only a *non-zero* run is
+    # expected to carry one; if it does not, the program died before its
+    # tests ran.
     if (( rc != 0 )) && ! has_zig_summary < "$tmp"; then
-      echo "ERROR: nvme14m:$b exited $rc with no Zig test summary (build/boot failure?)" >&2
+      echo "ERROR: nvme14m:$t exited $rc with no Zig test summary (build/boot failure?)" >&2
       infra=1
     fi
   done

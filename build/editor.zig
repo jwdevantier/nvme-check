@@ -3,7 +3,7 @@
 //! `zls` resolves `@import("name")` from the build graph, and it only ever
 //! inspects the root `build.zig`, run with no `-Dprogram`. The per-suite
 //! modules that `-Dprogram` normally materialises — each suite's `common` and
-//! its batch programs — are therefore invisible to it, so go-to-definition on
+//! its test programs — are therefore invisible to it, so go-to-definition on
 //! anything reached through `@import("vfn")`, `@import("common")`, ... comes
 //! back empty.
 //!
@@ -23,9 +23,9 @@ pub const Infra = struct {
     qtest: *std.Build.Module,
 };
 
-/// Walk `tests/<suite>/` and expose each `common.zig` and `batches/*.zig` to
+/// Walk `tests/<suite>/` and expose each `common.zig` and `programs/*.zig` to
 /// the language server. Discovery mirrors the on-disk layout, so adding a
-/// suite or batch needs no change here.
+/// suite or program needs no change here.
 pub fn indexSuites(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
@@ -42,19 +42,19 @@ pub fn indexSuites(
             break :blk addSuiteRoot(b, target, optimize, infra, b.fmt("common_{s}", .{suite.name}), common_rel, null);
         } else |_| null;
 
-        const batches_rel = b.pathJoin(&.{ "tests", suite.name, "batches" });
-        const batches_dir = b.build_root.handle.openDir(b.graph.io, batches_rel, .{ .iterate = true }) catch continue;
-        var batches = batches_dir.iterate();
-        while (batches.next(b.graph.io) catch null) |batch| {
-            if (batch.kind != .file) continue;
-            if (!std.mem.endsWith(u8, batch.name, ".zig")) continue;
+        const programs_rel = b.pathJoin(&.{ "tests", suite.name, "programs" });
+        const programs_dir = b.build_root.handle.openDir(b.graph.io, programs_rel, .{ .iterate = true }) catch continue;
+        var programs = programs_dir.iterate();
+        while (programs.next(b.graph.io) catch null) |program| {
+            if (program.kind != .file) continue;
+            if (!std.mem.endsWith(u8, program.name, ".zig")) continue;
             _ = addSuiteRoot(
                 b,
                 target,
                 optimize,
                 infra,
-                b.fmt("batch_{s}_{s}", .{ suite.name, std.fs.path.stem(batch.name) }),
-                b.pathJoin(&.{ batches_rel, batch.name }),
+                b.fmt("program_{s}_{s}", .{ suite.name, std.fs.path.stem(program.name) }),
+                b.pathJoin(&.{ programs_rel, program.name }),
                 common_mod,
             );
         }
