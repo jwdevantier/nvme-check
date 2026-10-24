@@ -37,23 +37,23 @@ this plus its `pre_test`/`post_test` hooks):
       -- machine up: ensure image, spawn, loadvm baseline snapshot, ssh up
       local ctx = guest.boot(args.params.arch)
 
-      -- device: fresh drive, QMP-hotplug controller, unbind nvme.ko -> BDF
-      local bdf = ctx.add_nvme {
-        drive = "64M",                          -- -> fresh raw file, device_add-time
-        ctrl  = { serial = "deadbeef", msi = false },
-      }.out.bdfs[1]
-      ctx.bind_vfio(bdf)
+      -- device: fresh drive, QMP-hotplug the controller, hand it to vfio.
+      -- add_nvme() returns the QMP replies; the BDF comes from bind_vfio(),
+      -- which takes the *kernel's* controller name (nvme0, nvme1, ...).
+      local disk = ctx.raw("diy-identify", "64M")  -- cached image, fresh copy per run
+      ctx.add_nvme { drive = disk, ctrl = { serial = "deadbeef", msi = false } }
+      local bdf = ctx.bind_vfio("nvme0")
 
       -- compile for the guest (static musl test binary)
       local bin = step {
         uses = "nvmecheck:build",
         with = { arch = args.params.arch,
-                 root = join("tests", args.suite, "programs/identify.zig") },
-      }.out.bin
+                 program = join("tests", args.suite, "programs/identify.zig") },
+      }.out.path
 
-      -- ship + run + observe
+      -- ship + run + observe (env is prefixed onto the command: ctx.sh is sh -c)
       ctx.put(bin, "/tmp/x")
-      local res = ctx.sh("/tmp/x", { env = { NVME_BDF = bdf } })
+      local res = ctx.sh(("NVME_BDF=%s /tmp/x"):format(bdf))
 
       ctx.down()
       if res.code ~= 0 then error(res.stderr) end

@@ -77,15 +77,59 @@ language; a statically linked C binary would work the same way.
 | Key | Type | Meaning |
 |---|---|---|
 | `program` | string (required) | Zig test root, relative to `tests/<suite>/` |
-| `nvme` | spec, spec[], or `fun(ctx, with): string[]` | device setup (see below) |
+| `nvme` | spec, spec[], or `fun(ctx, with): string[]` | device setup for `dev = "nvme"` (see below) |
+| `vnvme` | same type — one spec, a list, or a function | device setup for `dev = "vnvme"` |
 | `pre_test` | `fun(ctx, with)` | after devices are added and bound, before the program runs |
 | `post_test` | `fun(ctx, with, result)` | always runs (finally), even on failure — collect artifacts, clean up |
 
-`nvme` is declarative: a single cluster spec
+Each device spec is declarative: a single cluster spec
 (`{ drive = "64M", ctrl = { ... } }`), a list of them (multi-controller
 tests), or a function that adds/binds its own devices via `ctx` and returns
 the BDFs. A bare size in `drive` resolves to a fresh per-run raw disk at
 device-add time.
+
+Same *type* for every device, not the same spec *keys*: what a spec may
+contain follows the device. `subsys`/`ns` exist only on `nvme` — a device with
+one implicit namespace rejects them instead of ignoring them.
+
+### Choosing the device
+
+| Key | Device |
+|---|---|
+| `params.dev` | which QEMU device backs the controller; absent means `nvme` |
+| `with.nvme` | the spec used by `dev = "nvme"` — QEMU's test device |
+| `with.vnvme` | the spec used by `dev = "vnvme"` — its production controller |
+
+`dev` is an ordinary parameter, so one test program can be checked against
+more than one controller:
+
+```lua
+{ name = "inspect", tags = { "nvme14", "fast" },
+  params = {
+    { arch = "amd64", dev = "nvme" },
+    { arch = "amd64", dev = "vnvme" },
+    { arch = "s390x" },
+  },
+  with = {
+    program = "programs/inspect.zig",
+    nvme  = { drive = "64M", ctrl = { logical_block_size = 512 } },
+    vnvme = { drive = "64M", ctrl = { logical_block_size = 512 } },
+  } }
+```
+
+The key *is* the device name: the driver reads `with[params.dev]`, and nothing
+is whitelisted. A custom QEMU build with its own `nvme`-like controller needs
+only `with.mydevice` and `dev = "mydevice"`; an unknown name is QEMU's to
+reject at device-add time.
+
+`vnvme` is QEMU's hardened, minimal controller: the mandatory command set only,
+no CMB/PMR/ZNS/SR-IOV, no Format NVM, fixed Identify strings, and one
+*implicit* nsid-1 namespace fed by `drive`. It has no subsystem or namespace
+objects at all, so `subsys`/`ns` in a `vnvme` spec is an error rather than a
+silently ignored key. What it does take are the block properties (`drive`,
+`logical_block_size`, `physical_block_size`, `min_io_size`, `opt_io_size`,
+`discard_granularity`, `write-cache`, `share-rw`) plus `serial` and
+`num_queues` — all through `ctrl`, exactly like the test device's.
 
 ## Writing test programs
 

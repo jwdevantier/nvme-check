@@ -6,7 +6,12 @@
 -- spec can be rendered for either attachment path or inspected in a log.
 --
 -- Spec schema (all optional except meaning):
---   id            base id (default "nvme0"); sub-ids derive from it
+--   device        QEMU device behind the controller (default "nvme"): any
+--                 name a `-device`/`device_add` accepts, e.g. "nvme" (QEMU's
+--                 test device) or "vnvme" (its hardened production
+--                 controller). Custom builds need nothing here — an unknown
+--                 name is QEMU's to reject.
+--   id            base id (default "<device>0"); sub-ids derive from it
 --   serial        ctrl serial (default id)
 --   drive         namespace backing: a path string (raw/qcow2 by drive_format)
 --                 or a full blockdev-args table; nil = no namespace
@@ -16,7 +21,7 @@
 --                 false to omit
 --   subsys        nil/false = none; true = {} or a table of nvme-subsys params
 --   subsys_id     default id.."-subsys"
---   ctrl          extra nvme ctrl params (merged last, wins)
+--   ctrl          extra controller params (merged last, wins)
 --   ns            extra nvme-ns params (merged last, wins); PRESENCE means an
 --                 explicit namespace. When nil and `drive` is set, the drive is
 --                 attached to the CTRL instead (implicit nsid 1) so the stack
@@ -24,9 +29,13 @@
 --   ns_id         default id.."-ns"
 --   nsid          default 1
 --
+-- Only "nvme" has separate subsystem/namespace objects. Every other device
+-- owns a single implicit nsid-1 namespace fed by `drive`, so `subsys`/`ns` on
+-- such a spec is an error rather than a silently ignored key.
+--
 -- `attach` (from the arch) fixes WHERE the controller lands, e.g.
 -- { bus = "rp0", addr = "0.0" } for amd64 Q35, {} for s390 zPCI. It is merged
--- under `spec.ctrl`, so a test can override it.
+-- last, so it wins over the defaults and over `spec.ctrl`.
 --
 -- THIS QEMU BUILD: only the controller is hotpluggable. TYPE_NVME_BUS has no
 -- hotplug handler, so `device_add nvme-ns` fails with "Bus ... does not support
@@ -38,23 +47,33 @@
 --   * NS/ctrl-subsys params: use the COLD path (nvme.cold_args) in a test's
 --     machine args, i.e. boot/restart with the stack present.
 
+-- `device` decides which keys are legal: QEMU's test device ("nvme") honours
+-- all of them, while a device with one implicit namespace ("vnvme", ...) takes
+-- only `id`, `serial`, `drive*` and `ctrl`, and rejects `subsys*`/`ns*`.
 ---@class NvmeSpec
----@field id? string
----@field serial? string
----@field drive? string|table
----@field drive_node? string
----@field drive_format? string
----@field drive_cache? table|false
----@field subsys? boolean|table
----@field subsys_id? string
----@field ctrl? table<string, any>
----@field ns? table<string, any>
----@field ns_id? string
----@field nsid? integer
+---@field device? string         QEMU device: "nvme" (default) or any other
+---@field id? string             base id, default "<device>0"
+---@field serial? string         controller serial, default the id
+---@field drive? string|table    namespace backing: a path, or blockdev args
+---@field drive_node? string     blockdev node, default "<id>-bdev"
+---@field drive_format? string   "raw" (default) | "qcow2" | ...
+---@field drive_cache? table|false  blockdev cache, default { direct = true }
+---@field ctrl? table<string, any>  extra controller properties (merged last)
+---@field subsys? boolean|table    nvme only: no subsystem, or its properties
+---@field subsys_id? string         nvme only, default "<id>-subsys"
+---@field ns? table<string, any>   nvme only: presence means an explicit namespace
+---@field ns_id? string             nvme only, default "<id>-ns"
+---@field nsid? integer             nvme only, default 1
+
+-- What a driver accepts for one device key (`with.nvme`, `with.vnvme`,
+-- `with.<custom>`): one controller, a list of controllers, or a function that
+-- adds and binds its own devices and returns their BDFs.
+---@alias DeviceSetup NvmeSpec|NvmeSpec[]|fun(ctx: any, with: table): string[]
 
 ---@class NvmePlanEntry
 ---@field kind "blockdev"|"subsys"|"ctrl"|"ns"
 ---@field id string
+---@field driver? string QEMU type of a device entry (nil for blockdev)
 ---@field args table<string, any>
 
 ---@class QmpCommand
@@ -115,13 +134,22 @@ end
 local BLOCKDEV_DRIVER = { raw = "raw", qcow2 = "qcow2" }
 
 -- plan(spec) -> ordered list of devices:
---   { kind = "blockdev"|"subsys"|"ctrl"|"ns", id = <str>, args = <table> }
+--   { kind = "blockdev"|"subsys"|"ctrl"|"ns", id = <str>,
+--     driver = <QEMU type, device entries only>, args = <table> }
 ---@param spec? NvmeSpec
 ---@return NvmePlanEntry[]
 function M.plan(spec)
 	spec = spec or {}
-	local id = spec.id or "nvme0"
+	local device = spec.device or "nvme"
+	local id = spec.id or (device .. "0")
 	local plan = {}
+
+	if device ~= "nvme" then
+		assert(not spec.subsys and spec.ns == nil and spec.nsid == nil
+			and spec.ns_id == nil and spec.subsys_id == nil,
+			("nvme: device '%s' has a single implicit namespace: drop 'subsys'/'ns'")
+			:format(device))
+	end
 
 	local drive_node
 	local drive = spec.drive
@@ -151,7 +179,7 @@ function M.plan(spec)
 	if spec.subsys then
 		subsys_id = spec.subsys_id or (id .. "-subsys")
 		plan[#plan + 1] = {
-			kind = "subsys", id = subsys_id,
+			kind = "subsys", id = subsys_id, driver = "nvme-subsys",
 			args = spec.subsys == true and {} or spec.subsys,
 		}
 	end
@@ -164,7 +192,10 @@ function M.plan(spec)
 	if subsys_id then ctrl.subsys = subsys_id end
 	-- implicit namespace: the drive rides the controller's blkconf
 	if drive_node and not has_ns then ctrl.drive = drive_node end
-	plan[#plan + 1] = { kind = "ctrl", id = id, args = merge(ctrl, spec.ctrl or {}) }
+	plan[#plan + 1] = {
+		kind = "ctrl", id = id, driver = device,
+		args = merge(ctrl, spec.ctrl or {}),
+	}
 
 	if has_ns then
 		local ns = {
@@ -173,7 +204,10 @@ function M.plan(spec)
 			nsid = spec.nsid or 1,
 		}
 		if drive_node then ns.drive = drive_node end
-		plan[#plan + 1] = { kind = "ns", id = ns.id, args = merge(ns, spec.ns) }
+		plan[#plan + 1] = {
+			kind = "ns", id = ns.id, driver = "nvme-ns",
+			args = merge(ns, spec.ns),
+		}
 	end
 
 	return plan
@@ -181,12 +215,13 @@ end
 
 -- --- render: QMP (hotplug) -----------------------------------------------
 
-local QMP_DRIVER = {
-	blockdev = nil, -- driver already inside args
-	subsys = "nvme-subsys",
-	ctrl = "nvme",
-	ns = "nvme-ns",
-}
+-- render_args(entry) -> the QEMU arguments for one plan entry. The device type
+-- rides the entry (`driver`), so a ctrl spec can name any QEMU NVMe device.
+---@param d NvmePlanEntry
+---@return table<string, any>
+local function render_args(d)
+	return merge(d.args, { driver = d.driver })
+end
 
 -- commands(spec, attach?) -> list of QMP command tables, in dependency order.
 -- `attach` lands on the controller only.
@@ -200,7 +235,7 @@ function M.commands(spec, attach)
 		if d.kind == "blockdev" then
 			cmds[#cmds + 1] = { execute = "blockdev-add", arguments = d.args }
 		else
-			local args = merge(d.args, { driver = QMP_DRIVER[d.kind] })
+			local args = render_args(d)
 			if d.kind == "ctrl" then args = merge(args, attach or {}) end
 			cmds[#cmds + 1] = { execute = "device_add", arguments = args }
 		end
@@ -224,7 +259,7 @@ function M.cold_args(spec, attach)
 			out[#out + 1] = "-blockdev"
 			out[#out + 1] = serialize(d.args)
 		else
-			local args = merge(d.args, { driver = QMP_DRIVER[d.kind] })
+			local args = render_args(d)
 			if d.kind == "ctrl" then args = merge(args, attach or {}) end
 			out[#out + 1] = "-device"
 			out[#out + 1] = serialize(args)

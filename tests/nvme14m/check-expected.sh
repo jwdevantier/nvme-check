@@ -141,8 +141,10 @@ run_suite() {
   tmp="$(mktemp)" || return 2
   for t in $tests; do
     printf '\n=== nvme14m:%s ===\n' "$t" >> "$run_log"
-    # the allow-list is amd64-only, and `arch` is an ordinary tag now
-    ./nvme-check.lua "nvme14m:$t" -w 'arch=amd64' >"$tmp" 2>&1
+    # The allow-list records QEMU's *test device* deviations, so it pins both
+    # the arch and the device: the suite's vnvme cases are a separate (new)
+    # question and would otherwise be reported as unexpected failures.
+    ./nvme-check.lua "nvme14m:$t" -w 'arch=amd64 and dev=nvme' >"$tmp" 2>&1
     rc=$?
     cat "$tmp" >> "$run_log"
 

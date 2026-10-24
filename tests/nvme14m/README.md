@@ -18,6 +18,26 @@ allowances are not the ones tested here.
 - DMA buffers that are page-aligned and a whole number of pages long — the
   iommufd backend rejects anything else. `vfntest.pageBuffer` handles this.
 
+## Devices: the test device and the production controller
+
+`dev` is an ordinary parameter. On amd64 every program therefore runs twice:
+against QEMU's test device (`dev=nvme`, the NVMe implementation with all of its
+optional extensions) and against its hardened production controller
+(`dev=vnvme`, the mandatory subset). Both are configured by the same block
+properties, so `workflow.lua` builds the device once and hands it to both
+`with.nvme` and `with.vnvme`.
+
+The program is unchanged — only the controller behind `$NVME_BDF` differs.
+`vnvme` owns a single implicit nsid-1 namespace (fed by `drive`; no
+`nvme-subsys`/`nvme-ns` objects), reports fixed Identify strings, and has
+neither Format NVM nor the optional log pages and features. Its lane is a
+*plumbing* check, not a conformance one: `io` passes, while `inspect`,
+`features`, `admin_errors`, `reset` and `shutdown` fail on assertions the
+production controller does not satisfy. `known-qemu-failures.txt` records the
+test device's deviations; there is no allow-list for `vnvme` yet.
+
+s390x keeps the test device alone until vnvme is tried on zPCI.
+
 ## Isolation: one program per concern
 
 The suite is six test programs, each registered as its own `workflow.lua`
@@ -103,11 +123,15 @@ with a Controller Reset between them to resume.
 # Host-only spec unit tests (spec.zig; no device, no makac) — always green.
 zig build test
 
-# The whole suite (every test-case), architecture pinned to amd64.
+# The whole suite on amd64: both devices, every program.
 ./nvme-check.lua nvme14m -w 'arch=amd64'
 
-# One test, by workflow.lua entry name.
+# One test, by workflow.lua entry name (both of its amd64 cases).
 ./nvme-check.lua nvme14m:inspect -w 'arch=amd64'
+
+# Only the production-controller lane, or everything but it.
+./nvme-check.lua nvme14m -w 'arch=amd64 and dev=vnvme'
+./nvme-check.lua nvme14m -w 'not dev=vnvme'
 
 # Acceptance: runs the host tests and all six test programs, and exits 0 iff
 # every failing Zig test is on the known-QEMU-failure allow-list.

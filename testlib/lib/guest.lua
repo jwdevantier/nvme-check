@@ -43,7 +43,7 @@ local nvmelib = require("./nvme")
 ---@field raw fun(name: string, size?: string): string
 ---@field add_nvme fun(spec: NvmeSpec, attach?: table<string, any>): QmpResult[]
 ---@field del_nvme fun(id: string)
----@field bind_vfio fun(): string
+---@field bind_vfio fun(name?: string): string
 ---@field spawn fun(opts?: SpawnOpts): SpawnedVm
 ---@field teardown fun()
 ---@field down fun()
@@ -142,11 +142,9 @@ function M.context(arch_name, session)
 			uses = "qemu:qmp/send",
 			with = { vm = ctx.vm, commands = nvmelib.commands(spec, attach) },
 		}
-		for i, r in ipairs(res.out.results) do
-			if r.error ~= nil then
-				error(("nvme add %s: command %d failed: %s"):format(id, i, r.error.desc), 0)
-			end
-		end
+		-- qemu:qmp/send defaults to on_error = "fail": the step raises on the
+		-- first error reply, naming the command and QEMU's own desc. Reaching
+		-- here therefore means every command in the stack succeeded.
 		return res.out.results
 	end
 
