@@ -17,6 +17,126 @@ const vfntest = @import("vfntest");
 /// `@import("common").spec`.
 pub const spec = @import("spec.zig");
 
+/// Skip the current test with a reason printed next to the Zig test runner's
+/// SKIP line. `error.SkipZigTest` itself carries no message.
+pub fn skip(comptime fmt: []const u8, args: anytype) error{SkipZigTest} {
+    std.debug.print("    skip: " ++ fmt ++ "\n", args);
+    return error.SkipZigTest;
+}
+
+/// Like std.testing.expectEqual, but prints a context message when the
+/// assertion fails. Zig's testing API has no message parameter.
+pub fn expectEqualMsg(
+    expected: anytype,
+    actual: @TypeOf(expected),
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
+    std.testing.expectEqual(expected, actual) catch |err| {
+        std.debug.print("    " ++ fmt ++ "\n", args);
+        return err;
+    };
+}
+
+/// Human-readable name for a completion status code. `sct` selects the
+/// generic (0) or command-specific (1) table; the numeric values are printed
+/// by `expectStatus` alongside these names.
+pub fn statusName(sct: u8, sc: u8) []const u8 {
+    return switch (sct) {
+        spec.sct_generic => switch (sc) {
+            0x00 => "Success",
+            0x01 => "Invalid Command Opcode",
+            0x02 => "Invalid Field in Command",
+            0x03 => "Command ID Conflict",
+            0x04 => "Data Transfer Error",
+            0x05 => "Command Aborted due to Power Loss",
+            0x06 => "Internal Error",
+            0x07 => "Command Abort Requested",
+            0x08 => "Command Aborted due to SQ Deletion",
+            0x09 => "Command Aborted due to Failed Fused Command",
+            0x0a => "Command Aborted due to Missing Fused Command",
+            0x0b => "Invalid Namespace or Format",
+            0x0c => "Command Sequence Error",
+            0x0d => "Invalid SGL Last Segment",
+            0x0e => "Invalid Number of SGL Descriptors",
+            0x0f => "Data SGL Length Invalid",
+            0x10 => "Metadata SGL Length Invalid",
+            0x11 => "SGL Descriptor Type Invalid",
+            0x12 => "Invalid Use of Controller Memory Buffer",
+            0x13 => "PRP Offset Invalid",
+            0x14 => "Atomic Write Unit Normal",
+            0x15 => "Operation Denied",
+            0x16 => "SGL Data Block Granularity Invalid",
+            0x17 => "Command Not Supported for Queue in CMB",
+            0x18 => "Namespace is Write Protected",
+            0x19 => "Command Interrupted",
+            0x1a => "Transient Transport Error",
+            0x80 => "LBA Out of Range",
+            0x81 => "Capacity Exceeded",
+            0x82 => "Namespace Not Ready",
+            0x83 => "Namespace Reservation Conflict",
+            0x84 => "Format in Progress",
+            else => "Unknown Generic Status",
+        },
+        spec.sct_cmd_specific => switch (sc) {
+            0x00 => "Completion Queue Invalid",
+            0x01 => "Invalid Queue Identifier",
+            0x02 => "Invalid Queue Size",
+            0x03 => "Abort Command Limit Exceeded",
+            0x05 => "Asynchronous Event Request Limit Exceeded",
+            0x06 => "Invalid Firmware Slot",
+            0x07 => "Invalid Firmware Image",
+            0x08 => "Invalid Interrupt Vector",
+            0x09 => "Invalid Log Page",
+            0x0a => "Invalid Format",
+            0x0b => "Firmware Activation Requires Conventional Reset",
+            0x0c => "Invalid Queue Deletion",
+            0x0d => "Feature Identifier Not Saveable",
+            0x0e => "Feature Not Changeable",
+            0x0f => "Feature Not Namespace Specific",
+            0x10 => "Firmware Activation Requires NVM Subsystem Reset",
+            0x11 => "Firmware Activation Requires Controller Level Reset",
+            0x12 => "Firmware Activation Requires Maximum Time Violation",
+            0x13 => "Firmware Activation Prohibited",
+            0x14 => "Overlapping Range",
+            0x15 => "Namespace Insufficient Capacity",
+            0x16 => "Namespace Identifier Unavailable",
+            0x18 => "Namespace Already Attached",
+            0x19 => "Namespace Is Private",
+            0x1a => "Namespace Not Attached",
+            else => "Unknown Command-Specific Status",
+        },
+        else => "Unknown Status Type",
+    };
+}
+
+/// Assert both SCT and SC, printing the human-readable names and numeric
+/// values on mismatch instead of Zig's bare `expected 2, found 4`.
+pub fn expectStatus(
+    expected_sct: u8,
+    expected_sc: u8,
+    st: nvme.Status,
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
+    const actual_sct: u8 = @intCast(st.sct);
+    if (actual_sct == expected_sct and st.sc == expected_sc) return;
+
+    std.debug.print("    " ++ fmt ++ "\n", args);
+    std.debug.print(
+        "    expected {s} (SCT={d} SC=0x{x}), got {s} (SCT={d} SC=0x{x})\n",
+        .{
+            statusName(expected_sct, expected_sc),
+            expected_sct,
+            expected_sc,
+            statusName(actual_sct, st.sc),
+            actual_sct,
+            st.sc,
+        },
+    );
+    return error.StatusMismatch;
+}
+
 // libvfn's nvme_init() expects a zeroed controller (it does not clear it
 // itself); an `undefined` global would poison it.
 var g_ctrl: vfn.Ctrl = std.mem.zeroes(vfn.Ctrl);
