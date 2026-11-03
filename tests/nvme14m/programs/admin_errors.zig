@@ -47,6 +47,23 @@ fn submitMapped(cmd: *vfn.Cmd, iova: c.iova_t, len: usize) !nvme.Status {
     return nvme.status(cqe);
 }
 
+/// Get Log Page with LPOL past the end of the page. Figure 192 requires
+/// Invalid Field in Command, and the mapped buffer keeps that offset the only
+/// fault in the command.
+fn expectLogOffsetPastEnd(lid: u8, len: usize, offset: u64, iova: c.iova_t, name: []const u8) !void {
+    var cmd = spec.getLogCmd(lid, 0, len);
+    cmd.log.lpol = c.cpu_to_le32(@as(u32, @truncate(offset)));
+    const st = try submitMapped(&cmd, iova, len);
+    std.debug.print("    error {s} offset 0x{x} -> {s} (SCT={d} SC=0x{x})\n", .{
+        name,
+        offset,
+        common.statusName(@intCast(st.sct), st.sc),
+        st.sct,
+        st.sc,
+    });
+    try common.expectStatus(spec.sct_generic, spec.sc_invalid_field, st, "{s} offset 0x{x}", .{ name, offset });
+}
+
 /// Poll the admin completion queue until a completion for `cid` arrives,
 /// consuming any earlier completions; write the head doorbell once.
 fn waitCid(cq: *vfn.Cq, cid: u16) !vfn.Cqe {
@@ -125,7 +142,28 @@ test "admin error completions" {
         try common.expectStatus(spec.sct_generic, spec.sc_invalid_field, st, "Identify CNS 0xfe", .{});
     }
 
-    // 3. Get Log Page with an unsupported or reserved LID -> Invalid Log Page.
+    // 3. Get Log Page with an offset past the end of the log page -> Invalid
+    //    Field. All three mandatory I/O-controller log pages must validate
+    //    LPOL/LPOU before touching the data buffer (1.4(c) §5.14, Figure 192;
+    //    2.3 §5.2.12, Figure 203): 01h Error Information (64 bytes per entry,
+    //    size from ELPE), 02h SMART/Health (512 bytes), 03h Firmware Slot Info
+    //    (512 bytes). A DMA buffer is mapped so the offset is the only fault.
+    {
+        var dma = try common.dmaMap(4096);
+        defer dma.deinit();
+
+        var id = spec.identifyCmd(spec.cns_ctrl, 0, 0);
+        const idst = try submitMapped(&id, dma.iova, 4096);
+        try common.expectStatus(spec.sct_generic, spec.sc_success, idst, "Identify CNS 01h", .{});
+
+        const elpe = spec.get8(dma.buf.bytes(), spec.idc_elpe);
+        const err_log_size = (@as(u64, elpe) + 1) * 64;
+        try expectLogOffsetPastEnd(spec.log_error_info, 64, err_log_size + 4, dma.iova, "Error Information");
+        try expectLogOffsetPastEnd(spec.log_smart, 512, 0x1000, dma.iova, "SMART/Health");
+        try expectLogOffsetPastEnd(spec.log_fw_slot, 512, 0x1000, dma.iova, "Firmware Slot Information");
+    }
+
+    // 4. Get Log Page with an unsupported or reserved LID -> Invalid Log Page.
     //    1.4(c) §5.14.2 / Figure 243 defines SC=09h (SCT=1) and returns it "if a
     //    reserved log page is requested"; only controllers compliant with
     //    "versions 1.3 and earlier" may return generic Invalid Field. QEMU is
@@ -136,18 +174,6 @@ test "admin error completions" {
         const st = try submit(&cmd);
         std.debug.print("    error Get Log LID 0x{x} -> {s} (SCT={d} SC=0x{x})\n", .{ lid_reserved, common.statusName(@intCast(st.sct), st.sc), st.sct, st.sc });
         try common.expectStatus(spec.sct_cmd_specific, spec.csc_invalid_log_page, st, "Get Log LID 0x{x}", .{lid_reserved});
-    }
-
-    // 4. Get Log Page with an offset past the end of the log page -> Invalid
-    //    Field. Error Information is 64 bytes per entry (Figure 209); LPOL =
-    //    1000h is past its end, which Figure 203 requires the controller to
-    //    abort with Invalid Field in Command.
-    {
-        var cmd = spec.getLogCmd(spec.log_error_info, 0, 64);
-        cmd.log.lpol = c.cpu_to_le32(0x1000);
-        const st = try submit(&cmd);
-        std.debug.print("    error Get Log offset 0x1000 -> {s} (SCT={d} SC=0x{x})\n", .{ common.statusName(@intCast(st.sct), st.sc), st.sct, st.sc });
-        try common.expectStatus(spec.sct_generic, spec.sc_invalid_field, st, "Get Log LID 0x{x} offset 0x1000", .{spec.log_error_info});
     }
 }
 
