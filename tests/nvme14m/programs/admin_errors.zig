@@ -112,9 +112,8 @@ test "admin error completions" {
         var cmd = std.mem.zeroes(vfn.Cmd);
         cmd.unnamed_0.opcode = admin_opcode_reserved;
         const st = try submit(&cmd);
-        std.debug.print("    error opcode 0x{x} -> sct={d} sc=0x{x}\n", .{ admin_opcode_reserved, st.sct, st.sc });
-        try std.testing.expectEqual(spec.sct_generic, st.sct);
-        try std.testing.expectEqual(spec.sc_invalid_opcode, st.sc);
+        std.debug.print("    error opcode 0x{x} -> {s} (SCT={d} SC=0x{x})\n", .{ admin_opcode_reserved, common.statusName(@intCast(st.sct), st.sc), st.sct, st.sc });
+        try common.expectStatus(spec.sct_generic, spec.sc_invalid_opcode, st, "reserved admin opcode 0x{x}", .{admin_opcode_reserved});
     }
 
     // 2. Identify with a reserved CNS -> Invalid Field (Figure 102, 02h).
@@ -122,9 +121,8 @@ test "admin error completions" {
     {
         var cmd = spec.identifyCmd(0xfe, 0, 0);
         const st = try submit(&cmd);
-        std.debug.print("    error Identify CNS 0xfe -> sct={d} sc=0x{x}\n", .{ st.sct, st.sc });
-        try std.testing.expectEqual(spec.sct_generic, st.sct);
-        try std.testing.expectEqual(spec.sc_invalid_field, st.sc);
+        std.debug.print("    error Identify CNS 0xfe -> {s} (SCT={d} SC=0x{x})\n", .{ common.statusName(@intCast(st.sct), st.sc), st.sct, st.sc });
+        try common.expectStatus(spec.sct_generic, spec.sc_invalid_field, st, "Identify CNS 0xfe", .{});
     }
 
     // 3. Get Log Page with an unsupported or reserved LID -> Invalid Log Page.
@@ -136,9 +134,8 @@ test "admin error completions" {
     {
         var cmd = spec.getLogCmd(lid_reserved, 0, 64);
         const st = try submit(&cmd);
-        std.debug.print("    error Get Log LID 0x{x} -> sct={d} sc=0x{x}\n", .{ lid_reserved, st.sct, st.sc });
-        try std.testing.expectEqual(spec.sct_cmd_specific, st.sct);
-        try std.testing.expectEqual(spec.csc_invalid_log_page, st.sc);
+        std.debug.print("    error Get Log LID 0x{x} -> {s} (SCT={d} SC=0x{x})\n", .{ lid_reserved, common.statusName(@intCast(st.sct), st.sc), st.sct, st.sc });
+        try common.expectStatus(spec.sct_cmd_specific, spec.csc_invalid_log_page, st, "Get Log LID 0x{x}", .{lid_reserved});
     }
 
     // 4. Get Log Page with an offset past the end of the log page -> Invalid
@@ -149,9 +146,8 @@ test "admin error completions" {
         var cmd = spec.getLogCmd(spec.log_error_info, 0, 64);
         cmd.log.lpol = c.cpu_to_le32(0x1000);
         const st = try submit(&cmd);
-        std.debug.print("    error Get Log offset 0x1000 -> sct={d} sc=0x{x}\n", .{ st.sct, st.sc });
-        try std.testing.expectEqual(spec.sct_generic, st.sct);
-        try std.testing.expectEqual(spec.sc_invalid_field, st.sc);
+        std.debug.print("    error Get Log offset 0x1000 -> {s} (SCT={d} SC=0x{x})\n", .{ common.statusName(@intCast(st.sct), st.sc), st.sct, st.sc });
+        try common.expectStatus(spec.sct_generic, spec.sc_invalid_field, st, "Get Log LID 0x{x} offset 0x1000", .{spec.log_error_info});
     }
 }
 
@@ -181,27 +177,36 @@ test "admin Async Event Request and Abort" {
 
     var got_ab = false;
     var got_aer = false;
-    var ab_sc: u8 = 0xff;
-    var aer_sc: u8 = 0xff;
+    var ab_st: nvme.Status = .{ .sc = 0xff, .sct = 0, .crd = 0, .m = false, .dnr = false };
+    var aer_st: nvme.Status = .{ .sc = 0xff, .sct = 0, .crd = 0, .m = false, .dnr = false };
     var spins: usize = 0;
     while (spins < 100_000 and !(got_ab and got_aer)) : (spins += 1) {
         const cqe = vfn.cqGetCqe(cq) orelse continue;
         const st = nvme.status(cqe.*);
         if (cqe.cid == ab_rq.cid) {
             got_ab = true;
-            ab_sc = st.sc;
+            ab_st = st;
         } else if (cqe.cid == aer_cid) {
             got_aer = true;
-            aer_sc = st.sc;
+            aer_st = st;
         }
     }
     vfn.cqUpdateHead(cq);
 
-    std.debug.print("    AER cid=0x{x} abort cid=0x{x}: ab_sc=0x{x} aer_sc=0x{x}\n", .{ aer_cid, ab_rq.cid, ab_sc, aer_sc });
+    std.debug.print("    AER cid=0x{x} abort cid=0x{x}: abort={s} (SCT={d} SC=0x{x}), aer={s} (SCT={d} SC=0x{x})\n", .{
+        aer_cid,
+        ab_rq.cid,
+        common.statusName(@intCast(ab_st.sct), ab_st.sc),
+        ab_st.sct,
+        ab_st.sc,
+        common.statusName(@intCast(aer_st.sct), aer_st.sc),
+        aer_st.sct,
+        aer_st.sc,
+    });
     try std.testing.expect(got_ab);
     try std.testing.expect(got_aer);
-    try std.testing.expectEqual(spec.sc_success, ab_sc);
-    try std.testing.expectEqual(spec.sc_abort_req, aer_sc);
+    try common.expectStatus(spec.sct_generic, spec.sc_success, ab_st, "Abort completion", .{});
+    try common.expectStatus(spec.sct_generic, spec.sc_abort_req, aer_st, "AER completion", .{});
 }
 
 // The AERL field (Figure 328 byte 259) is a 0's based maximum, so a conformant
@@ -220,7 +225,7 @@ test "admin Asynchronous Event Request limit" {
     {
         var id = spec.identifyCmd(spec.cns_ctrl, 0, 0);
         const st = try submitMapped(&id, dma.iova, 4096);
-        try std.testing.expectEqual(spec.sc_success, st.sc);
+        try common.expectStatus(spec.sct_generic, spec.sc_success, st, "Identify CNS 01h", .{});
     }
     const b = dma.buf.bytes();
     const aerl = spec.get8(b, spec.idc_aerl);
@@ -259,9 +264,8 @@ test "admin Asynchronous Event Request limit" {
         vfn.sqExec(sq, &cmd);
         const cqe = try waitCid(cq, rq.cid | spec.cid_aer);
         const st = nvme.status(cqe);
-        std.debug.print("    AER overflow -> sct={d} sc=0x{x}\n", .{ st.sct, st.sc });
-        try std.testing.expectEqual(spec.sct_cmd_specific, st.sct);
-        try std.testing.expectEqual(spec.csc_aer_limit, st.sc);
+        std.debug.print("    AER overflow -> {s} (SCT={d} SC=0x{x})\n", .{ common.statusName(@intCast(st.sct), st.sc), st.sct, st.sc });
+        try common.expectStatus(spec.sct_cmd_specific, spec.csc_aer_limit, st, "AER overflow", .{});
     }
 
     // Abort every outstanding AER so the queue and request pool are empty for
@@ -273,8 +277,8 @@ test "admin Asynchronous Event Request limit" {
         var ab = spec.abortCmd(0, aer_cid);
         vfn.rqExec(ab_rq, &ab);
         const pair = try waitPair(cq, ab_rq.cid, aer_cid);
-        try std.testing.expectEqual(spec.sc_success, nvme.status(pair.a).sc);
-        try std.testing.expectEqual(spec.sc_abort_req, nvme.status(pair.b).sc);
+        try common.expectStatus(spec.sct_generic, spec.sc_success, nvme.status(pair.a), "Abort completion", .{});
+        try common.expectStatus(spec.sct_generic, spec.sc_abort_req, nvme.status(pair.b), "AER completion", .{});
         vfn.rqRelease(aer_rq);
     }
 }
@@ -299,12 +303,12 @@ test "admin asynchronous event delivery" {
     // be restored. Its CQE Dword 0 is the threshold value.
     var get = spec.getFeaturesCmd(spec.fid_temp_thresh, spec.sel_current, 0);
     const before = try submitCqe(&get);
-    try std.testing.expectEqual(spec.sc_success, nvme.status(before).sc);
+    try common.expectStatus(spec.sct_generic, spec.sc_success, nvme.status(before), "Get Features 04h", .{});
     const default_thresh: u16 = @truncate(nvme.cqeDw0(before) & 0xffff);
 
     // Enable the SMART/Health temperature-threshold event.
     var en = spec.setFeaturesCmd(spec.fid_async_event_conf, 0, spec.smart_temp_thresh);
-    try std.testing.expectEqual(spec.sc_success, (try submit(&en)).sc);
+    try common.expectStatus(spec.sct_generic, spec.sc_success, try submit(&en), "Set Features 0Bh", .{});
 
     // Post an AER. It must stay outstanding: no completion may appear before
     // an event occurs.
@@ -325,8 +329,8 @@ test "admin asynchronous event delivery" {
     var set = spec.setFeaturesCmd(spec.fid_temp_thresh, 0, 1);
     vfn.rqExec(sf_rq, &set);
     const pair = try waitPair(cq, aer_cid, sf_rq.cid);
-    try std.testing.expectEqual(spec.sc_success, nvme.status(pair.a).sc);
-    try std.testing.expectEqual(spec.sc_success, nvme.status(pair.b).sc);
+    try common.expectStatus(spec.sct_generic, spec.sc_success, nvme.status(pair.a), "AER completion", .{});
+    try common.expectStatus(spec.sct_generic, spec.sc_success, nvme.status(pair.b), "Set Features 04h", .{});
 
     const dw0 = nvme.cqeDw0(pair.a);
     const aet: u3 = @truncate(dw0 & 0x7);
@@ -342,9 +346,9 @@ test "admin asynchronous event delivery" {
     // threshold so the critical warning clears.
     var gl = spec.getLogCmd(spec.log_smart, 0xffffffff, 512);
     const gst = try submitMapped(&gl, dma.iova, 512);
-    std.debug.print("    SMART clear: sct={d} sc=0x{x} (threshold {d})\n", .{ gst.sct, gst.sc, default_thresh });
-    try std.testing.expectEqual(spec.sc_success, gst.sc);
+    std.debug.print("    SMART clear -> {s} (SCT={d} SC=0x{x}, threshold {d})\n", .{ common.statusName(@intCast(gst.sct), gst.sc), gst.sct, gst.sc, default_thresh });
+    try common.expectStatus(spec.sct_generic, spec.sc_success, gst, "SMART clear", .{});
 
     var restore = spec.setFeaturesCmd(spec.fid_temp_thresh, 0, default_thresh);
-    try std.testing.expectEqual(spec.sc_success, (try submit(&restore)).sc);
+    try common.expectStatus(spec.sct_generic, spec.sc_success, try submit(&restore), "restore threshold", .{});
 }
