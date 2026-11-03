@@ -21,6 +21,16 @@ fn getFeature(fid: u8, sel: u8, nsid: u32) !u32 {
     return nvme.cqeDw0(cqe);
 }
 
+/// ONCS bit 4 (SSFS): the controller supports non-zero SEL in Get Features and
+/// non-zero SV in Set Features (Base 1.4(c) Figure 251 bytes 521:520).
+fn saveSelectSupported() !bool {
+    var buf = try vfntest.pageBuffer(4096);
+    defer buf.deinit();
+    var cmd = spec.identifyCmd(spec.cns_ctrl, 0, 0);
+    _ = try common.adminOk(&cmd, common.ptr(buf), buf.bytes().len);
+    return (spec.get16(buf.bytes(), spec.idc_oncs) & spec.oncs_save_select) != 0;
+}
+
 /// Set Features CDW11. The completion status is returned, not required: a
 /// mandatory feature may legitimately be read-only, in which case the command
 /// fails with a defined command-specific status (Figure 103).
@@ -63,6 +73,9 @@ fn setAndCheck(fid: u8, nsid: u32, new_val: u32, mask: u32) !Outcome {
 /// saveable (SVBL clear in the supported-capabilities word, Figure 199) the
 /// saved read falls back to the default. (The backlog says "SEL=2 default and
 /// SEL=3 saved"; Figure 196 / `spec.sel_*` define default = 1 and saved = 2.)
+///
+/// Only called when ONCS bit 4 (Save/Select) is set; SEL != 0 is otherwise
+/// unsupported (Figure 251 bytes 521:520).
 fn checkDefaultSaved(fid: u8, nsid: u32) !void {
     const def = try getFeature(fid, spec.sel_default, nsid);
     const sav = try getFeature(fid, spec.sel_saved, nsid);
@@ -119,10 +132,9 @@ test "admin Set/Get Features reserved FID rejected" {
 // mandatory feature as read-only: then Set fails with the command-specific
 // Feature Not Changeable (0Eh) and the value stays put.
 test "admin Set Features mandatory IDs" {
-    // ONCS.SSFS (Figure 328 byte 520 bit 4) reports whether the Save/Select
-    // mechanism is supported at all; log it for context. The per-feature
-    // supported-capabilities word (SEL=3) is the finer-grained authority used
-    // by checkDefaultSaved.
+    // ONCS.SSFS (Figure 251 bytes 521:520 bit 4) reports whether the Save/Select
+    // mechanism is supported at all. When clear, SEL != 0 and SV != 0 are not
+    // supported and the default/saved checks below are skipped.
     var ibuf = try vfntest.pageBuffer(4096);
     defer ibuf.deinit();
     var icmd = spec.identifyCmd(spec.cns_ctrl, 0, 0);
@@ -137,7 +149,7 @@ test "admin Set Features mandatory IDs" {
         const o = try setAndCheck(spec.fid_arbitration, 0, 0x03020103, 0xffffff07);
         std.debug.print("    Set Arbitration -> {s}\n", .{@tagName(o)});
         try std.testing.expect(o == .accepted or o == .not_changeable);
-        try checkDefaultSaved(spec.fid_arbitration, 0);
+        if (ssfs) try checkDefaultSaved(spec.fid_arbitration, 0);
     }
 
     // --- 02h Power Management, controller scope (Figure 405) --------------
@@ -146,7 +158,7 @@ test "admin Set Features mandatory IDs" {
         const o = try setAndCheck(spec.fid_power_mgmt, 0, 0x20, 0xff);
         std.debug.print("    Set PowerManagement -> {s}\n", .{@tagName(o)});
         try std.testing.expect(o == .accepted or o == .not_changeable);
-        try checkDefaultSaved(spec.fid_power_mgmt, 0);
+        if (ssfs) try checkDefaultSaved(spec.fid_power_mgmt, 0);
     }
 
     // --- 04h Temperature Threshold, controller scope (Figure 407) ---------
@@ -159,7 +171,7 @@ test "admin Set Features mandatory IDs" {
         const o = try setAndCheck(spec.fid_temp_thresh, 0, new, 0xffff);
         std.debug.print("    Set TemperatureThreshold 0x{x} -> {s}\n", .{ new, @tagName(o) });
         try std.testing.expect(o == .accepted or o == .not_changeable);
-        try checkDefaultSaved(spec.fid_temp_thresh, 0);
+        if (ssfs) try checkDefaultSaved(spec.fid_temp_thresh, 0);
     }
 
     // --- 0Bh Asynchronous Event Configuration, controller scope (Fig. 409) -
@@ -171,7 +183,7 @@ test "admin Set Features mandatory IDs" {
         const o = try setAndCheck(spec.fid_async_event_conf, 0, new, 0xffffffff);
         std.debug.print("    Set AsyncEventConfig 0x{x} -> {s}\n", .{ new, @tagName(o) });
         try std.testing.expect(o == .accepted or o == .not_changeable);
-        try checkDefaultSaved(spec.fid_async_event_conf, 0);
+        if (ssfs) try checkDefaultSaved(spec.fid_async_event_conf, 0);
     }
 
     // --- 05h Error Recovery, namespace scope (NVM Figure 97) ---------------
@@ -186,7 +198,7 @@ test "admin Set Features mandatory IDs" {
             // Controller-scoped on this controller: set it through NSID 0.
             try std.testing.expectEqual(Outcome.accepted, try setAndCheck(spec.fid_err_recovery, 0, new, 0xffffffff));
         }
-        try checkDefaultSaved(spec.fid_err_recovery, 1);
+        if (ssfs) try checkDefaultSaved(spec.fid_err_recovery, 1);
     }
 
     // --- 0Ah Write Atomicity Normal, namespace scope (NVM Figure 98) ------
@@ -201,7 +213,7 @@ test "admin Set Features mandatory IDs" {
         if (o == .not_ns_specific) {
             try std.testing.expectEqual(Outcome.accepted, try setAndCheck(spec.fid_write_atomicity, 0, new, 0x1));
         }
-        try checkDefaultSaved(spec.fid_write_atomicity, 0);
+        if (ssfs) try checkDefaultSaved(spec.fid_write_atomicity, 0);
     }
 }
 
@@ -222,11 +234,18 @@ fn setFeatureSaved(fid: u8, nsid: u32, cdw11: u32) !nvme.Status {
 // A mandatory feature need not be saveable or changeable. The controller
 // advertises this through the supported-capabilities word (Get Features
 // SEL=3, Figure 199), and a Set that contradicts it must fail with the
-// matching command-specific status from Figure 103.
+// matching command-specific status from Figure 103. This test only applies
+// when ONCS bit 4 (Save/Select) is set (Figure 251 bytes 521:520).
 //
 // NB: the backlog writes "SEL=2 default / SEL=3 saved"; Figure 196 defines
 // default = 1, saved = 2 and supported capabilities = 3 (see `spec.sel_*`).
 test "admin Set Features SEL and feature status codes" {
+    // Non-zero SEL and SV are only supported when ONCS bit 4 is set
+    // (Figure 251 bytes 521:520); otherwise skip the whole test.
+    if (!try saveSelectSupported()) {
+        return common.skip("ONCS bit 4 (Save/Select) not supported", .{});
+    }
+
     // --- SEL current(0) / default(1) / saved(2) on Temperature Threshold ---
     // 04h is mandatory and (on the POC) changeable but not saveable. A feature
     // that is not saveable reports the default for a saved read (Figure 196).
