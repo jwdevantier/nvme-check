@@ -438,7 +438,7 @@ test "admin Identify Controller mandatory fields" {
     const sgls = spec.get32(b, spec.idc_sgls);
     const subnqn = b[spec.idc_subnqn .. spec.idc_subnqn + 256];
 
-    std.debug.print("    id-ctrl: vid=0x{x} ssvid=0x{x} ver=0x{x} cntlid={d} mdts={d}\n", .{ vid, ssvid, ver, cntlid, mdts });
+    std.debug.print("\n    id-ctrl: vid=0x{x} ssvid=0x{x} ver=0x{x} cntlid={d} mdts={d}\n", .{ vid, ssvid, ver, cntlid, mdts });
     std.debug.print("    id-ctrl: oacs=0x{x} acl={d} aerl={d} frmw=0x{x} lpa=0x{x} elpe={d} npss={d}\n", .{ oacs, acl, aerl, frmw, lpa, elpe, npss });
     std.debug.print("    id-ctrl: sqes=0x{x} cqes=0x{x} nn={d} oncs=0x{x} fuses=0x{x} fna=0x{x} vwc=0x{x}\n", .{ sqes, cqes, nn, oncs, fuses, fna, vwc });
     std.debug.print("    id-ctrl: awun={d} awupf={d} acwu={d} sgls=0x{x}\n", .{ awun, awupf, acwu, sgls });
@@ -504,7 +504,8 @@ test "admin Identify Controller mandatory fields" {
 
     // FRMW (Figure 328 byte 260): bits 7:6 are reserved and NOFS (bits 3:1)
     // reports one to seven firmware slots, so at least one must be present.
-    try std.testing.expectEqual(@as(u8, 0), frmw & 0xc0);
+    const frmw_reserved = (frmw >> 6) & 0x3; // bits 7:6
+    try std.testing.expectEqual(@as(u8, 0), frmw_reserved);
     try std.testing.expect(((frmw >> 1) & 0x7) >= 1);
 
     // LPA (Figure 328 byte 261): bit 7 is reserved.
