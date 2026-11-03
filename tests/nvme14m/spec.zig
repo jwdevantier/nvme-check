@@ -234,6 +234,8 @@ pub const idc_elpe: usize = 262;
 pub const idc_npss: usize = 263;
 pub const idc_sqes: usize = 512;
 pub const idc_cqes: usize = 513;
+/// Number of Namespaces (NN), Figure 251 bytes 519:516: the maximum valid
+/// NSID (Base 1.4(c) §6.1.2; 2.3 Figure 328 bytes 519:516).
 pub const idc_nn: usize = 516;
 pub const idc_oncs: usize = 520;
 pub const idc_fuses: usize = 522;

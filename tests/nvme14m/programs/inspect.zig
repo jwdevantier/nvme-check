@@ -736,15 +736,26 @@ test "admin Identify Namespace Identification Descriptor list" {
     if (!eui64_set and !nguid_set) try std.testing.expect(have_uuid);
 }
 
-// NSID semantics. BASE §3.2.1.2: 0h is an invalid NSID, as is any NSID greater
-// than NN. §3.2.1.5: an invalid NSID aborts with Invalid Namespace or Format.
-// NVM §4.1.5.1: a valid but inactive (here unallocated) NSID instead returns a
-// zero-filled Identify Namespace data structure. NN itself is the maximum
-// valid NSID (BASE Figure 328 bytes 519:516), so the Active Namespace ID list
-// must stay within it (a device may leave gaps, so equality is not required).
-// (The backlog's parenthetical that CNS 00h with NSID 0 returns the namespace
-// capabilities structure does not match the spec: 0h is invalid, and the
-// common-capabilities structure is selected with the broadcast NSID.)
+// NSID semantics. Spec refs use Base 1.4(c) numbers (the suite's arbiter);
+// the registered Base 2.3 equivalents are in parentheses.
+//
+// What makes an NSID invalid - Base 1.4(c) - §6.1.2 (2.3: §3.2.1.2)
+//   Valid NSIDs are 1..NN; 0h and values greater than NN are invalid.
+//   FFFFFFFFh is the broadcast value, not an ordinary valid NSID.
+// What makes an NSID inactive - Base 1.4(c) - §6.1.4 (2.3: §3.2.1.4)
+//   Active = attached to this controller. Unallocated NSIDs are inactive for
+//   all controllers.
+// Inactive vs invalid status - Base 1.4(c) - §6.1.5 (2.3: §3.2.1.5)
+//   Inactive -> Invalid Field in Command; invalid -> Invalid Namespace or
+//   Format, unless a command-specific rule says otherwise.
+// Identify CNS 00h exception - NVM 1.4(c) - §4.1.5.1
+//   A valid but inactive NSID returns a zero-filled Identify Namespace data
+//   structure, not an error.
+// NN is the maximum valid NSID - Base 1.4(c) - Figure 251, bytes 519:516
+//   (2.3: Figure 328, bytes 519:516).
+// CNS 00h broadcast NSID - Base 1.4(c) - §5.15.2.1
+//   FFFFFFFFh returns common namespace capabilities only when Namespace
+//   Management is supported; otherwise Invalid Namespace or Format.
 test "admin Identify Namespace NSID semantics and NN" {
     var buf = try vfntest.pageBuffer(4096);
     defer buf.deinit();
@@ -770,28 +781,30 @@ test "admin Identify Namespace NSID semantics and NN" {
     try std.testing.expect(count <= nn);
     try std.testing.expect(max_nsid <= nn);
 
-    // NSID 0h is invalid.
+    // NSID 0h is invalid - Base 1.4(c) - §6.1.2 / §6.1.5
+    // (2.3: §3.2.1.2 / §3.2.1.5).
     {
         var cmd = spec.identifyCmd(spec.cns_ns, 0, 0);
         const r = try common.admin(&cmd, common.ptr(buf), buf.bytes().len);
         const st = nvme.status(r.cqe);
         std.debug.print("    id-ns(0): sc=0x{x} sct=0x{x}\n", .{ st.sc, st.sct });
-        try std.testing.expectEqual(spec.sc_invalid_namespace, st.sc);
-        try std.testing.expectEqual(spec.sct_generic, st.sct);
+        try common.expectEqualMsg(spec.sc_invalid_namespace, st.sc, "Identify CNS 00h NSID 0: expected Invalid Namespace (0x{x}), got 0x{x}", .{ spec.sc_invalid_namespace, st.sc });
+        try common.expectEqualMsg(spec.sct_generic, st.sct, "Identify CNS 00h NSID 0: expected Generic status type (0x{x}), got 0x{x}", .{ spec.sct_generic, st.sct });
     }
-    // An NSID greater than NN is invalid.
+    // NSID > NN is invalid - Base 1.4(c) - §6.1.2 / §6.1.5
+    // (2.3: §3.2.1.2 / §3.2.1.5).
     if (nn < std.math.maxInt(u32)) {
         var cmd = spec.identifyCmd(spec.cns_ns, 0, nn +% 1);
         const r = try common.admin(&cmd, common.ptr(buf), buf.bytes().len);
         const st = nvme.status(r.cqe);
         std.debug.print("    id-ns({d}): sc=0x{x} sct=0x{x}\n", .{ nn +% 1, st.sc, st.sct });
-        try std.testing.expectEqual(spec.sc_invalid_namespace, st.sc);
-        try std.testing.expectEqual(spec.sct_generic, st.sct);
+        try common.expectEqualMsg(spec.sc_invalid_namespace, st.sc, "Identify CNS 00h NSID {d} (> NN {d}): expected Invalid Namespace (0x{x}), got 0x{x}", .{ nn +% 1, nn, spec.sc_invalid_namespace, st.sc });
+        try common.expectEqualMsg(spec.sct_generic, st.sct, "Identify CNS 00h NSID {d} (> NN {d}): expected Generic status type (0x{x}), got 0x{x}", .{ nn +% 1, nn, spec.sct_generic, st.sct });
     }
 
     // The first valid NSID not in the Active list is inactive; it must return
     // a zero-filled data structure (and does not transfer the previous
-    // buffer).
+    // buffer) - NVM 1.4(c) - §4.1.5.1.
     var candidate: u32 = 1;
     while (candidate <= nn) : (candidate += 1) {
         var is_active = false;
