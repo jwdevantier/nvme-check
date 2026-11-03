@@ -1,7 +1,7 @@
 //! NVMe 1.4 mandatory baseline — read-only inspection test program.
 //!
 //! Everything here is non-destructive: the transport registers and the
-//! controller enable state, the single memory BAR plus MSI-X capability,
+//! controller enable state, the register BAR plus MSI-X capability,
 //! interrupt masking, the four mandatory Identify CNS structures, the
 //! controller capability fields, namespace NSID semantics and descriptor-list
 //! rules, and the mandatory Get Log Page IDs and their
@@ -95,38 +95,95 @@ test "transport registers and controller enable state" {
     try std.testing.expect(acq != 0);
 }
 
-// MSI-X is the controller's interrupt transport and the register block is a
-// single memory BAR: BAR0. BAR2 (CMB) / BAR4 (PMR or MSI-X-exclusive) are
-// unclaimed, which is what "one BAR" means for a 1.4 controller.
-test "transport one memory BAR and MSI-X capability" {
+// NVMe over PCIe Transport Spec R1.4 Figure 10 assigns the BARs: BAR0/1 is
+// the controller register memory (MLBAR/MUBAR), BAR2 is the optional
+// Index/Data Pair or vendor specific, and BAR3/4/5 are vendor specific. A
+// non-zero BAR2..BAR5 is therefore not a defect; the MSI-X Table/PBA may live
+// in BAR4/5 (Figures 45/46).
+test "transport BAR0 and BAR1" {
     const ctrl_ = try common.ctrl();
 
     const command = common.cfgRead16(ctrl_, 0x04);
     try std.testing.expect(command & 0x2 != 0); // memory space enable
     try std.testing.expect(command & 0x4 != 0); // bus master enable
 
+    // Figure 20: BAR0 is a non-prefetchable memory BAR. Bits 13:04 are RO 0,
+    // so the register block is at least 16 KiB and 16 KiB aligned.
     const bar0 = common.cfgRead32(ctrl_, 0x10);
-    try std.testing.expect(bar0 & 0x1 == 0); // memory BAR, not I/O
+    try std.testing.expect((bar0 & 0x1) == 0); // memory space
+    try std.testing.expect((bar0 & 0x8) == 0); // non-prefetchable
+    const bar0_reserved = (bar0 >> 4) & 0x3ff; // bits 13:04
+    try std.testing.expectEqual(@as(u32, 0), bar0_reserved);
 
-    // BAR2..BAR5: no CMB (BAR2), no PMR / MSI-X-exclusive BAR (BAR4).
-    inline for (.{ 0x18, 0x1c, 0x20, 0x24 }) |off| {
-        try std.testing.expectEqual(@as(u32, 0), common.cfgRead32(ctrl_, off) & 0xfffffff0);
+    // Figure 20 bits 02:01: 00b = 32-bit, 10b = 64-bit. 64-bit is recommended
+    // (not required); 01b/11b are reserved by PCI.
+    const bar_type = (bar0 >> 1) & 0x3;
+    try std.testing.expect(bar_type == 0 or bar_type == 2);
+
+    // Figure 21: BAR1 is MUBAR, the upper 32 bits of a 64-bit BAR0. A 32-bit
+    // BAR0 has no upper half. A 64-bit BAR0 may legitimately have BAR1 == 0
+    // when the assigned address fits in 32 bits (the §3.8.1.11 note).
+    const bar1 = common.cfgRead32(ctrl_, 0x14);
+    if (bar_type == 0) {
+        try std.testing.expectEqual(@as(u32, 0), bar1);
     }
 
-    // MSI-X (capability ID 11h) is present. MXC.TS + 1 is the number of
-    // interrupt vectors, so it must be at least one; the Table and PBA BIRs
-    // must select a real BAR (MSI-X Message Control / Table / PBA registers).
-    // This bounds the valid Interrupt Vector field of Create I/O CQ.
-    const msix = try common.msix();
+    // The VFIO region size is the BAR size. Figure 20 reserves bits 13:04, so
+    // BAR0 is at least 16 KiB and covers the doorbells at offset 1000h
+    // (Figure 4).
+    const bar0_size = ctrl_.pci.bar_region_info[0].size;
+    try std.testing.expect(bar0_size >= 0x4000);
+    try std.testing.expect((bar0_size & (bar0_size - 1)) == 0); // PCI power of two
+
+    std.debug.print("    BAR0=0x{x} ({s}-bit) BAR1=0x{x} size=0x{x}\n", .{
+        bar0, if (bar_type == 2) "64" else "32", bar1, bar0_size,
+    });
+}
+
+// MSI-X is optional (TP R1.4 Figure 42): skip the MSI-X-specific tests when
+// the capability is absent. This test inspects the capability itself, so it
+// runs whenever MSI-X is present; it does not require MXE to be set.
+test "transport MSI-X capability" {
+    const ctrl_ = try common.ctrl();
+    const msix = (try common.msixMaybe()) orelse
+        return common.skip("MSI-X capability absent", .{});
+
     std.debug.print("    MSI-X: vectors={d} enabled={} masked={} table=BIR{d}+0x{x} pba=BIR{d}+0x{x}\n", .{
         msix.vectors,          msix.enabled(),
         msix.functionMasked(), msix.tableBir(),
         msix.tableOffset(),    msix.pbaBir(),
         msix.pbaOffset(),
     });
-    try std.testing.expect(msix.vectors >= 1);
-    try std.testing.expect(msix.tableBir() <= 5);
-    try std.testing.expect(msix.pbaBir() <= 5);
+
+    // Figure 44: MXC.TS is an 11-bit field encoded as n-1, so the table size
+    // (`vectors` = TS + 1) is in [1, 2048]. Bits 13:11 are reserved 000b.
+    const mxc_reserved = (msix.mc >> 11) & 0x7; // bits 13:11
+    try std.testing.expectEqual(@as(u16, 0), mxc_reserved);
+
+    // Figures 45/46: in an NVMe implementation the Table and PBA BIRs may
+    // select only BAR0 (0h), BAR4 (4h), or BAR5 (5h); 1h/2h are n/a and
+    // 3h/6h/7h are reserved.
+    try std.testing.expect(common.isValidMsixBir(msix.tableBir()));
+    try std.testing.expect(common.isValidMsixBir(msix.pbaBir()));
+
+    // The table/PBA must fit inside the BAR selected by its BIR. The VFIO
+    // region size is the BAR size. (For BIR 0 this is BAR0; for BIR 4/5 it is
+    // the vendor-specific BAR that vnvme uses for its MSI-X table.)
+    const table_size = @as(u64, msix.vectors) * 16;
+    const pba_size = (@as(u64, msix.vectors) + 63) / 64 * 8;
+    try std.testing.expect(@as(u64, msix.tableOffset()) + table_size <= ctrl_.pci.bar_region_info[msix.tableBir()].size);
+    try std.testing.expect(@as(u64, msix.pbaOffset()) + pba_size <= ctrl_.pci.bar_region_info[msix.pbaBir()].size);
+
+    // If the table and PBA share a BAR, they must not overlap. The transport
+    // spec's "memory page(s) ... shall not include other registers/structures"
+    // rules out sharing.
+    if (msix.tableBir() == msix.pbaBir()) {
+        const t0 = @as(u64, msix.tableOffset());
+        const t1 = t0 + table_size;
+        const p0 = @as(u64, msix.pbaOffset());
+        const p1 = p0 + pba_size;
+        try std.testing.expect(t1 <= p0 or p1 <= t0);
+    }
 }
 
 // INTMS sets and INTMC clears interrupt mask bits; reading INTMS reflects the
@@ -137,17 +194,19 @@ test "transport one memory BAR and MSI-X capability" {
 // validate the mask-table geometry instead when MSI-X is active.
 test "transport interrupt masking INTMS INTMC" {
     const ctrl_ = try common.ctrl();
-    const msix = try common.msix();
 
-    if (msix.enabled()) {
-        // MSI-X is the configured interrupt transport: INTMS/INTMC would be
-        // undefined accesses. Assert the mask-table geometry the host would
-        // program instead (a valid vector count and a real table/PBA BAR).
-        try std.testing.expect(msix.vectors >= 1);
-        try std.testing.expect(msix.tableBir() <= 5);
-        try std.testing.expect(msix.pbaBir() <= 5);
-        std.debug.print("    MSI-X configured: INTMS/INTMC not accessed\n", .{});
-        return;
+    // No MSI-X capability at all means pin/MSI is the interrupt transport, so
+    // the INTMS/INTMC path below is the right one.
+    if (try common.msixMaybe()) |msix| {
+        if (msix.enabled()) {
+            // MSI-X is the configured interrupt transport: INTMS/INTMC would
+            // be undefined accesses. Validate the mask-table geometry the host
+            // would program instead (a legal BIR).
+            try std.testing.expect(common.isValidMsixBir(msix.tableBir()));
+            try std.testing.expect(common.isValidMsixBir(msix.pbaBir()));
+            std.debug.print("    MSI-X configured: INTMS/INTMC not accessed\n", .{});
+            return;
+        }
     }
 
     // Pin-based / MSI configuration: INTMS/INTMC are the masking mechanism.
@@ -162,19 +221,18 @@ test "transport interrupt masking INTMS INTMC" {
     common.regWrite32(ctrl_, spec.reg_intms, initial);
 }
 
-// Set up a real MSI-X completion path: enable MSI-X, bind an I/O completion
-// queue to a valid vector (Create I/O CQ CDW11.IV), and complete a command on
-// it. This test only proves the queue-binding half: it polls the completion
-// queue, so it does not observe the interrupt message. The separate
-// "MSI-X interrupt delivery" test below registers a VFIO eventfd and waits for
-// the device to signal the vector.
+// Needs the MSI-X capability (Create I/O CQ CDW11.IV and the MSI-X table
+// geometry). The completion is polled, so MXE need not be set here; the
+// delivery test below is the one that needs MSI-X enabled. It binds an I/O CQ
+// to vector 0 and completes a command, proving the queue-binding half; the
+// delivery test registers a VFIO eventfd and observes the message itself.
 test "MSI-X vector setup and command completion" {
     const ctrl_ = try common.ctrl();
-    const msix = try common.msix();
-    try std.testing.expect(msix.vectors >= 1);
-
-    // Interrupt Vector 0 is always valid: the Create I/O CQ field is 0-based
-    // and must be < MXC.TS + 1 (or FFFFh to disable interrupts).
+    const msix = (try common.msixMaybe()) orelse
+        return common.skip("MSI-X capability absent", .{});
+    // MXC.TS is encoded as n-1, so vectors = TS + 1 >= 1; Interrupt Vector 0
+    // is always valid. (The Create I/O CQ field must be < vectors, or FFFFh to
+    // disable interrupts.)
     const vector: u16 = 0;
 
     // Enable MSI-X so the device would accept the vector (MSI-X Message
@@ -216,22 +274,26 @@ test "MSI-X vector setup and command completion" {
 // 1.4(c) Figure 153 (Create I/O CQ CDW11): a queue created with Interrupts
 // Enabled and a valid Interrupt Vector signals that MSI-X vector (§2.4) when a
 // completion is posted; the eventfd is where VFIO surfaces it.
+//
+// This test needs MSI-X to be both present (capability) and enabled (MXE=1):
+// with pin/MSI interrupts there is no MSI-X vector to observe. If MXE is clear,
+// request it; if the kernel/vfio-pci owns the bit and it stays clear, skip.
 test "MSI-X interrupt delivery" {
     const ctrl_ = try common.ctrl();
-    const msix = try common.msix();
+    const msix = (try common.msixMaybe()) orelse
+        return common.skip("MSI-X capability absent", .{});
     std.debug.print("    MSI-X delivery: table=BIR{d}+0x{x} vectors={d}\n", .{
         msix.tableBir(), msix.tableOffset(), msix.vectors,
     });
 
-    // The MSI-X table has to sit inside BAR0 at or above the doorbell window
-    // that libvfn maps (regs = [0, 0x1000), doorbells = [0x1000, end)). A table
-    // in another BAR, or below 0x1000, is out of this lane's scope: it cannot be
-    // reached through ctrl.doorbells.
-    if (msix.tableBir() != 0 or msix.tableOffset() < 0x1000) {
-        // Keep this tiny; the structural checks in the tests above already
-        // cover such controllers.
-        return error.SkipZigTest;
+    // Enable MSI-X if it is not already enabled. The kernel owns the bit while
+    // the device is bound to vfio-pci; registering the eventfd below is what
+    // lets the kernel actually enable it, so re-check after irqEnable().
+    const saved_mc = msix.mc;
+    if (!msix.enabled()) {
+        common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, saved_mc | 0x8000);
     }
+    defer common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, saved_mc);
 
     // The message address must be an IOVA the controller's IOMMU will accept
     // (the vfio-pci table trap rejects a bare physical address), so map one page
@@ -240,46 +302,67 @@ test "MSI-X interrupt delivery" {
     var dma = try common.dmaMap(vfntest.page_size);
     defer dma.deinit();
 
-    // Entry `v` of the table: four dwords at tableOffset + 16*v, relative to the
-    // doorbell mapping (subtract the 0x1000 window base).
+    // Locate the table. BIR 0 uses libvfn's BAR0 mappings; BIR 4/5 maps that
+    // vendor-specific BAR. Invalid BIRs and tables that do not fit are skipped:
+    // the structural test above already reports them.
+    const table_size = @as(usize, msix.vectors) * 16;
+    var table = common.mapMsixBar(ctrl_, msix.tableBir(), msix.tableOffset(), table_size) catch |err| switch (err) {
+        error.InvalidMsixBir, error.MsixOutOfBar, error.MsixStraddlesBar0Mappings => {
+            return common.skip("MSI-X table not reachable: {s}", .{@errorName(err)});
+        },
+        else => return err,
+    };
+    defer table.deinit(ctrl_);
+
+    // Safety: a table in BAR0 must not overlap the NVMe register page
+    // [0, 0x1000) or the doorbells this test uses (qid 0 at 0x1000/0x1004,
+    // qid 1 at 0x1008/0x100c). Never program a table entry over those.
+    if (msix.tableBir() == 0 and msix.tableOffset() < 0x1010) {
+        return common.skip("MSI-X table overlaps NVMe registers/doorbells", .{});
+    }
+
     const vector: u16 = 0;
-    const entry: usize = @as(usize, msix.tableOffset()) + 16 * @as(usize, vector) - 0x1000;
+    const entry = table.ptr + 16 * @as(usize, vector);
     const saved: [4]u32 = .{
-        common.dbRead32(ctrl_, entry),
-        common.dbRead32(ctrl_, entry + 4),
-        common.dbRead32(ctrl_, entry + 8),
-        common.dbRead32(ctrl_, entry + 12),
+        common.mmioRead32(entry),
+        common.mmioRead32(entry + 4),
+        common.mmioRead32(entry + 8),
+        common.mmioRead32(entry + 12),
     };
 
-    // Cleanup, in reverse declaration order: drop the queues first, then the
-    // eventfd, then restore the table entry, then the Message Control word, then
-    // the DMA mapping the vector pointed at.
-    defer common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, msix.mc);
+    // Restore the table entry before table.deinit() unmaps a BAR4/5 mapping.
     defer {
-        common.dbWrite32(ctrl_, entry, saved[0]);
-        common.dbWrite32(ctrl_, entry + 4, saved[1]);
-        common.dbWrite32(ctrl_, entry + 8, saved[2]);
-        common.dbWrite32(ctrl_, entry + 12, saved[3]);
+        common.mmioWrite32(entry, saved[0]);
+        common.mmioWrite32(entry + 4, saved[1]);
+        common.mmioWrite32(entry + 8, saved[2]);
+        common.mmioWrite32(entry + 12, saved[3]);
     }
 
     // Message address lo/hi = the IOVA; message data = a magic constant;
     // vector control = 0 (unmasked, unmodified delivery).
     const magic: u32 = 0x4e56_4d65; // "NVMe"
-    common.dbWrite32(ctrl_, entry, @truncate(dma.iova));
-    common.dbWrite32(ctrl_, entry + 4, @truncate(dma.iova >> 32));
-    common.dbWrite32(ctrl_, entry + 8, magic);
-    common.dbWrite32(ctrl_, entry + 12, 0);
+    common.mmioWrite32(entry, @truncate(dma.iova));
+    common.mmioWrite32(entry + 4, @truncate(dma.iova >> 32));
+    common.mmioWrite32(entry + 8, magic);
+    common.mmioWrite32(entry + 12, 0);
 
-    // Enable MSI-X and clear the function mask (Message Control bits 15 and
-    // 14). The kernel owns these while the device is bound to vfio-pci, so the
-    // write may read back unchanged; delivery still goes through the registered
-    // eventfd when the vector fires.
-    common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, (msix.mc | 0x8000) & ~@as(u16, 0x4000));
+    // Clear the function mask as well as setting MXE (Message Control bits 15
+    // and 14). The kernel may still own these; delivery goes through the
+    // registered eventfd when the vector fires.
+    common.cfgWrite16(ctrl_, @as(u64, msix.cap) + 2, (saved_mc | 0x8000) & ~@as(u16, 0x4000));
 
     const fd = try vfntest.irqEnable(ctrl_, vector);
     defer {
         _ = c.vfn_shim_disable_irq(ctrl_, vector);
         vfntest.irqDisable(fd);
+    }
+
+    // Registering the eventfd lets vfio-pci enable MSI-X if it owns the enable
+    // bit. If the device is still not configured for MSI-X, there is no vector
+    // to observe: skip rather than fail.
+    const active = try common.msix();
+    if (!active.enabled()) {
+        return common.skip("MSI-X present but not enabled", .{});
     }
 
     // Bind I/O CQ 1 to vector 0 (interrupts enabled), create SQ 1 on it, then

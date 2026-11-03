@@ -244,12 +244,14 @@ pub fn dbWrite32(ctrl_: *vfn.Ctrl, off: usize, v: u32) void {
     c.mmio_write32(@ptrCast(base + off), c.cpu_to_le32(v));
 }
 
-/// Read a 32-bit word from the doorbell region (the inverse of `dbWrite32`).
-/// Used to save/restore the MSI-X table, which lives above the doorbell window
-/// inside the same BAR0 mapping.
-pub fn dbRead32(ctrl_: *vfn.Ctrl, off: usize) u32 {
-    const base: [*c]u8 = @ptrCast(ctrl_.doorbells);
-    return c.le32_to_cpu(c.mmio_read32(@ptrCast(base + off)));
+/// Read/write a 32-bit word at an arbitrary mapped MMIO address (e.g. an
+/// MSI-X table entry in a BAR that is not BAR0).
+pub fn mmioRead32(addr: [*c]u8) u32 {
+    return c.le32_to_cpu(c.mmio_read32(@ptrCast(addr)));
+}
+
+pub fn mmioWrite32(addr: [*c]u8, v: u32) void {
+    c.mmio_write32(@ptrCast(addr), c.cpu_to_le32(v));
 }
 
 // --- PCI config space (little-endian on every host) -----------------------
@@ -337,10 +339,18 @@ pub const Msix = struct {
     }
 };
 
-/// Decode the MSI-X capability, or fail if the controller does not expose one.
-pub fn msix() !Msix {
+/// Figures 45/46: in an NVMe implementation the MSI-X Table and PBA BIRs may
+/// select only BAR0 (0h), BAR4 (4h), or BAR5 (5h). 1h/2h are n/a; 3h/6h/7h
+/// are reserved.
+pub fn isValidMsixBir(bir: u3) bool {
+    return bir == 0 or bir == 4 or bir == 5;
+}
+
+/// Decode the MSI-X capability, or null if the controller does not implement
+/// one. MSI-X is optional (TP R1.4 Figure 42: "MSI-X Capability (Optional)").
+pub fn msixMaybe() !?Msix {
     const ctrl_ = try ctrl();
-    const cap = pciFindCap(ctrl_, 0x11) orelse return error.NoMsixCapability;
+    const cap = pciFindCap(ctrl_, 0x11) orelse return null;
     const mc = cfgRead16(ctrl_, @as(u64, cap) + 2);
     return .{
         .cap = cap,
@@ -349,6 +359,99 @@ pub fn msix() !Msix {
         .table = cfgRead32(ctrl_, @as(u64, cap) + 4),
         .pba = cfgRead32(ctrl_, @as(u64, cap) + 8),
     };
+}
+
+/// Decode the MSI-X capability, or fail if the controller does not expose one.
+pub fn msix() !Msix {
+    return (try msixMaybe()) orelse error.NoMsixCapability;
+}
+
+/// A pointer to an MSI-X Table or PBA, plus what is needed to release it.
+pub const MsixMapping = struct {
+    /// First byte of the Table/PBA.
+    ptr: [*c]u8,
+    /// BAR index selected by the BIR.
+    bir: u3,
+    /// True when mapMsixBar() mapped the BAR and deinit() must unmap it.
+    owned: bool,
+    map_base: [*c]u8,
+    map_len: usize,
+
+    pub fn deinit(self: *MsixMapping, ctrl_: *vfn.Ctrl) void {
+        if (self.owned) {
+            c.vfio_pci_unmap_bar(
+                &ctrl_.pci,
+                @intCast(self.bir),
+                @ptrCast(self.map_base),
+                self.map_len,
+                0,
+            );
+        }
+    }
+};
+
+/// Locate an MSI-X Table or PBA and return a pointer to its first byte.
+///
+/// libvfn maps only BAR0 (nvme/core.c): [0, 0x1000) as `regs` and
+/// [0x1000, end) as `doorbells`. A BIR of 0 therefore needs no new mapping.
+/// BAR4/BAR5 are the vendor-specific BARs that the transport spec permits for
+/// the MSI-X Table/PBA (Figures 45/46); libvfn does not map those, so map the
+/// selected BAR here and let MsixMapping.deinit() unmap it.
+pub fn mapMsixBar(ctrl_: *vfn.Ctrl, bir: u3, offset: u32, len: usize) !MsixMapping {
+    const off = @as(u64, offset);
+    const end = off + len;
+
+    switch (bir) {
+        0 => {
+            // BAR0 is already mapped by libvfn; never unmap it here.
+            const bar0_size = ctrl_.pci.bar_region_info[0].size;
+            if (end > bar0_size) return error.MsixOutOfBar;
+
+            // The two libvfn mappings are contiguous in BAR0 but not in
+            // virtual memory; a structure straddling 0x1000 is not reachable.
+            if (off < 0x1000) {
+                if (end > 0x1000) return error.MsixStraddlesBar0Mappings;
+                return .{
+                    .ptr = @as([*c]u8, @ptrCast(ctrl_.regs)) + @as(usize, offset),
+                    .bir = 0,
+                    .owned = false,
+                    .map_base = undefined,
+                    .map_len = 0,
+                };
+            }
+            return .{
+                .ptr = @as([*c]u8, @ptrCast(ctrl_.doorbells)) + @as(usize, offset - 0x1000),
+                .bir = 0,
+                .owned = false,
+                .map_base = undefined,
+                .map_len = 0,
+            };
+        },
+        4, 5 => {
+            const region = ctrl_.pci.bar_region_info[bir];
+            if (region.size == 0 or end > region.size) return error.MsixOutOfBar;
+
+            // Map from offset 0: the table offset is 8-byte aligned, but VFIO
+            // mmap offsets must be page-aligned.
+            const map_len = std.math.cast(usize, region.size) orelse return error.MsixOutOfBar;
+            const mem = c.vfio_pci_map_bar(
+                &ctrl_.pci,
+                @intCast(bir),
+                map_len,
+                0,
+                c.PROT_READ | c.PROT_WRITE,
+            ) orelse return error.MsixMapFailed;
+            const base: [*c]u8 = @ptrCast(mem);
+            return .{
+                .ptr = base + @as(usize, offset),
+                .bir = bir,
+                .owned = true,
+                .map_base = base,
+                .map_len = map_len,
+            };
+        },
+        else => return error.InvalidMsixBir,
+    }
 }
 
 // --- DMA buffers ----------------------------------------------------------

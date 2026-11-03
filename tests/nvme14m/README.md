@@ -60,7 +60,8 @@ Shares one session and mutates nothing (its MSI-X tests create and delete a
 throwaway I/O queue pair; the log test submits a rejected Format NVM).
 
 - `transport registers and controller enable state`
-- `transport one memory BAR and MSI-X capability`
+- `transport BAR0 and BAR1`
+- `transport MSI-X capability`
 - `transport interrupt masking INTMS INTMC`
 - `MSI-X vector setup and command completion`
 - `MSI-X interrupt delivery`
