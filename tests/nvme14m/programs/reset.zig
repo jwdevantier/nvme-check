@@ -99,12 +99,12 @@ test "controller reset / enable state machine" {
     try std.testing.expectEqual(spec.csts_rdy, common.regRead32(ctrl_, spec.reg_csts) & spec.csts_rdy);
 
     // Capture the AEC Feature's default value while libvfn's admin queue is
-    // still valid. Figure 78 (CC.EN) requires a Controller Reset to reset
-    // non-persistent Feature values "to their default values", and §5.21.1 /
-    // Figure 275 (FID 0Bh) confirms AEC does not persist across a reset. The
-    // default itself is vendor specific (§7.8), so read it back with
-    // SEL=default rather than assuming it is 0h.
-    var get_aec_default = spec.getFeaturesDefault(spec.fid_async_event_conf, 0);
+    // still valid. libvfn has just completed its reset+enable sequence, so the
+    // current value is the default. Read it with SEL=current: SEL != 0 is only
+    // supported when ONCS bit 4 is set (Figure 251 bytes 521:520), and vnvme
+    // clears that bit. §5.21.1 / Figure 275 (FID 0Bh) confirms AEC does not
+    // persist across a Controller Reset.
+    var get_aec_default = spec.getFeaturesCurrent(spec.fid_async_event_conf, 0);
     const aec_default = nvme.cqeDw0(try common.adminOk(&get_aec_default, null, 0));
 
     // Create I/O CQ and SQ qid 1 so the reset's mandate to delete every I/O
